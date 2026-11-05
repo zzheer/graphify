@@ -3530,6 +3530,9 @@ _BACKEND_DETECTION_EXTRA_ENV = (
     "OLLAMA_BASE_URL", "OLLAMA_HOST",
     # The explicit selector/disable switch, read by _graphify_backend_setting().
     "GRAPHIFY_BACKEND",
+    # The hard kill switch (#2781), read by _no_llm_forced(); listed so the test
+    # suite's env isolation clears it like every other detection input.
+    "GRAPHIFY_NO_LLM",
 )
 
 
