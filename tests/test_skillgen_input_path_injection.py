@@ -123,10 +123,13 @@ def test_monolith_watch_uses_trusted_graphify_root(skill_file: str):
     assert "graphify-out/.graphify_python" in block, (
         f"{skill_file} --watch command does not reference graphify-out/.graphify_python"
     )
-    assert block == (
-        '$(cat graphify-out/.graphify_python) -m graphify.watch '
+    lines = block.split("\n")
+    assert lines[-1] == (
+        '"$GRAPHIFY_PYTHON" -m graphify.watch '
         '"$(cat graphify-out/.graphify_root)" --debounce 3'
     )
+    assert "$(cat graphify-out/.graphify_python)" not in block
+    assert lines[0].startswith('GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON')
 
 
 # --- Step 1 hostile INPUT_PATH injection resistance --------------------------

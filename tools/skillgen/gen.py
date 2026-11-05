@@ -444,9 +444,26 @@ def _render_frontmatter(platform: Platform) -> str:
 # untranslated bash to the Windows variant. ``_POWERSHELL_BANNED_TOKENS`` is the
 # belt-and-braces post-check on the final body.
 
-_PY_INVOKE_POSIX = '$(cat graphify-out/.graphify_python) -c "'
+# Interpreter resolution + invocation (security hardening). Every inline Python
+# block is three fixed shell lines followed by the body on stdin through a quoted
+# heredoc: the two resolve lines read graphify-out/.graphify_python (repository
+# data), reject anything but a plain executable path whose interpreter can import
+# graphify, and the opener runs it quoted. Nothing from the body or from a
+# substituted placeholder is ever parsed by the shell.
+_PY_RESOLVE_POSIX_1 = '''GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true'''
+_PY_RESOLVE_POSIX_2 = '''case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }'''
+_PY_INVOKE_POSIX = '"$GRAPHIFY_PYTHON" - <<\'PY\''
+_PY_CLOSE_POSIX = "PY"
+_PY_INVOKE_POSIX_LEGACY = '$(cat graphify-out/.graphify_python) -c "'  # pre-hardening form (v8 baseline)
+_PY_RESOLVE_PS_1 = "$GRAPHIFY_PYTHON = (Get-Content graphify-out\\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }"
+_PY_RESOLVE_PS_2 = (
+    "if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) "
+    '{ Write-Error "graphify-out\\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; '
+    '& $GRAPHIFY_PYTHON -c "import graphify" 2>$null; '
+    'if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }'
+)
 _PY_INVOKE_PS_OPEN = "@'"
-_PY_INVOKE_PS_CLOSE = "'@ | & (Get-Content graphify-out\\.graphify_python) -"
+_PY_INVOKE_PS_CLOSE = "'@ | & $GRAPHIFY_PYTHON -"
 _MKDIR_POSIX = "mkdir -p graphify-out"
 _MKDIR_PS = "New-Item -ItemType Directory -Force -Path graphify-out | Out-Null"
 _FIND_CHUNKS_POSIX = "find graphify-out -maxdepth 1 -name '.graphify_chunk_*.json' -delete 2>/dev/null"
@@ -460,15 +477,15 @@ _POWERSHELL_BANNED_TOKENS = ("$(cat ", "rm -f ", "2>/dev/null", "```bash")
 
 
 def _unescape_bash_dq(line: str) -> str:
-    """Turn one line of a bash ``-c "..."`` body into its verbatim (here-string) form.
+    """Check one line of a quoted-heredoc Python body for the here-string render.
 
-    Inside bash double quotes every literal ``"`` is written ``\\"``; a
-    single-quoted here-string is verbatim, so those escapes are dropped. Anything
-    else backslashed (except a Python ``'\\n'`` string literal, the only other
-    backslash the core bodies carry) is unexpected bash escaping and fails loudly,
-    as does a line that would terminate the here-string early.
+    The body is verbatim in both shells (a quoted heredoc and a single-quoted
+    here-string expand nothing), so nothing is rewritten. A backslash other than
+    a Python ``'\\n'`` string literal (the only one the core bodies carry) is
+    unexpected and fails loudly, as does a line that would terminate the
+    here-string early.
     """
-    body = line.replace('\\"', '"')
+    body = line
     if body.lstrip().startswith("'@"):
         raise ValueError(f"python body line would close the here-string: {line!r}")
     for m in re.finditer(r"\\(.)", body):
@@ -497,11 +514,15 @@ def _translate_bash_block(lines: list[str]) -> list[str]:
     in_py = False
     for line in lines:
         if in_py:
-            if line == '"':
+            if line == _PY_CLOSE_POSIX:
                 out.append(_PY_INVOKE_PS_CLOSE)
                 in_py = False
             else:
                 out.append(_unescape_bash_dq(line))
+        elif line == _PY_RESOLVE_POSIX_1:
+            out.append(_PY_RESOLVE_PS_1)
+        elif line == _PY_RESOLVE_POSIX_2:
+            out.append(_PY_RESOLVE_PS_2)
         elif line == _PY_INVOKE_POSIX:
             out.append(_PY_INVOKE_PS_OPEN)
             in_py = True
@@ -1249,6 +1270,8 @@ def _is_watch_injection_fix_line(line: str) -> bool:
     return (
         stripped == "python3 -m graphify.watch INPUT_PATH --debounce 3"
         or stripped == '$(cat graphify-out/.graphify_python) -m graphify.watch "$(cat graphify-out/.graphify_root)" --debounce 3'
+        # security hardening: same command through the validated interpreter
+        or stripped == '"$GRAPHIFY_PYTHON" -m graphify.watch "$(cat graphify-out/.graphify_root)" --debounce 3'
         or stripped == "Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:"
         or stripped == "This watches the same folder graphify extracted, read from the trusted `graphify-out/.graphify_root` that Step 1 resolved - there is no path to substitute, so a scan root containing shell metacharacters can never be re-interpreted here. Behavior depends on what changed:"
     )
@@ -1496,6 +1519,117 @@ def _is_pinned_install_fix_line(line: str) -> bool:
     )
 
 
+_LEGACY_M_PREFIX = "$(cat graphify-out/.graphify_python) -m "
+_M_PREFIX = '"$GRAPHIFY_PYTHON" -m '
+
+
+def _canon_interpreter_lines(lines: list[str]) -> list[str]:
+    """Map the v8 ``$(cat .graphify_python) -c "..."`` form and the hardened
+    resolve-lines + quoted-heredoc form onto one canonical spelling.
+
+    The security hardening rewrote every inline Python invocation mechanically
+    (resolve lines inserted, opener/closer swapped, bash ``\\"`` escapes dropped
+    because a quoted heredoc is verbatim, ``-m`` lines re-pointed at the
+    validated ``$GRAPHIFY_PYTHON``). Canonicalising both sides lets the round-trip
+    keep guarding every *other* line of the monoliths unchanged.
+    """
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped in (_PY_RESOLVE_POSIX_1, _PY_RESOLVE_POSIX_2):
+            continue
+        if stripped == _PY_INVOKE_POSIX_LEGACY or stripped == _PY_INVOKE_POSIX:
+            out.append(indent + "<<python>>")
+            continue
+        if stripped.startswith(_PY_INVOKE_POSIX + " "):
+            # heredoc opener with a trailing redirect: the v8 form carried it on the closer
+            out.append(indent + "<<python>>")
+            out.append('<</python>> ' + stripped[len(_PY_INVOKE_POSIX) + 1:])
+            continue
+        if line == _PY_CLOSE_POSIX:
+            out.append("<</python>>")
+            continue
+        if stripped.startswith('"') and (stripped == '"' or stripped[1:].lstrip().startswith(">")):
+            rest = stripped[1:].strip()
+            out.append("<</python>>" + (f" {rest}" if rest else ""))
+            continue
+        line = line.replace('\\"', '"')
+        if stripped.startswith(_LEGACY_M_PREFIX):
+            line = indent + _M_PREFIX + stripped[len(_LEGACY_M_PREFIX):]
+        out.append(line)
+    return out
+
+
+_INTERPRETER_FIX_LINES = frozenset(
+    line for line in (
+        "**In every subsequent bash block, replace `python3` with `$(cat graphify-out/.graphify_python)` to use the correct interpreter.**",
+        "**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is a plain path (`A-Za-z0-9_./+@:\\-` only), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c \"...\"` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.",
+        "Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists. If it's missing (e.g. user deleted `graphify-out/`), re-resolve the interpreter first:",
+        "Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists and is valid. If it is missing (e.g. user deleted `graphify-out/`), is not a plain executable path, or cannot import graphify, re-resolve the interpreter first:",
+    )
+) | frozenset(
+    line for line in '''```bash
+if [ ! -f graphify-out/.graphify_python ]; then
+    GRAPHIFY_BIN=$(which graphify 2>/dev/null)
+    if [ -n "$GRAPHIFY_BIN" ]; then
+        PYTHON=$(head -1 "$GRAPHIFY_BIN" | tr -d '#!')
+        case "$PYTHON" in *[!a-zA-Z0-9/_.@-]*) PYTHON="python3" ;; esac
+    else
+        PYTHON="python3"
+    fi
+    mkdir -p graphify-out
+    "$PYTHON" -c "import sys; open('graphify-out/.graphify_python', 'w').write(sys.executable)"
+fi
+```
+```bash
+# graphify-out/.graphify_python is repository data: re-resolve it unless it is a
+# plain path to an executable interpreter that can import graphify.
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\\\-]*) GRAPHIFY_PYTHON="";; esac
+if [ -z "$GRAPHIFY_PYTHON" ] || [ ! -x "$GRAPHIFY_PYTHON" ] || ! "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null; then
+    PYTHON="python3"
+    GRAPHIFY_BIN=$(which graphify 2>/dev/null)
+    if [ -n "$GRAPHIFY_BIN" ]; then
+        _SHEBANG=$(head -1 "$GRAPHIFY_BIN" | tr -d '#!')
+        case "$_SHEBANG" in *[!A-Za-z0-9_./+@:\\\\-]*) ;; *) "$_SHEBANG" -c "import graphify" 2>/dev/null && PYTHON="$_SHEBANG" ;; esac
+    fi
+    "$PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify is not importable: re-run Step 1" >&2; exit 1; }
+    mkdir -p graphify-out
+    "$PYTHON" -c "import sys; open('graphify-out/.graphify_python', 'w', encoding='utf-8').write(sys.executable)"
+fi
+```'''.splitlines() if line.strip() and not line.startswith("```")
+)
+
+
+def _is_interpreter_fix_line(line: str) -> bool:
+    """Whether a line belongs to the validated-interpreter change (security hardening):
+    the Step 1 closing prose, the interpreter guard block (old and new forms), and the
+    canonical ``<<python>>`` / ``<</python>>`` markers ``_canon_interpreter_lines`` emits
+    for an opener/closer (a block added by an earlier sanctioned fix used to be matched
+    by its literal ``-c "`` opener; the body lines are still checked one by one)."""
+    return line in _INTERPRETER_FIX_LINES or line.strip() in ("<<python>>", "<</python>>")
+
+
+def _is_labels_file_fix_line(line: str) -> bool:
+    """Community labels are read from graphify-out/.graphify_labels.json, never pasted
+    into the block as LABELS_DICT (security hardening, #4309)."""
+    return "LABELS_DICT" in line or ".graphify_labels.json" in line or "# LABELS - " in line
+
+
+def _is_save_result_file_fix_line(line: str) -> bool:
+    """save-result takes its question/answer/nodes from graphify-out/.graphify_result.json
+    instead of the command line (security hardening, #4309)."""
+    s = line.strip()
+    return (
+        "save-result" in s
+        or ".graphify_result.json" in s
+        or s.startswith("Replace `QUESTION` with the question, `ANSWER`")
+        or s.startswith("`question` is the question, `answer`")
+        or s.startswith("After writing the explanation, save it back")
+    )
+
+
 # Every line that may differ between a rendered monolith and its pristine v8
 # baseline. Each predicate documents one sanctioned change-class; a blank line is
 # allowed because the multi-line fix blocks insert spacing. Anything else failing
@@ -1530,6 +1664,9 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_hub_bypass_check_fix_line,
     _is_untrusted_data_guard_line,
     _is_pinned_install_fix_line,
+    _is_interpreter_fix_line,
+    _is_labels_file_fix_line,
+    _is_save_result_file_fix_line,
 )
 
 
@@ -1560,13 +1697,13 @@ def monolith_roundtrip(platform: Platform) -> list[str]:
     if platform.roundtrip_ref is None:
         return [f"[{platform.key}] monolith is missing roundtrip_ref"]
 
-    rendered_lines = render(platform)[0].content.splitlines()
+    rendered_lines = _canon_interpreter_lines(render(platform)[0].content.splitlines())
     # Strip trigger lines from the original — they are non-spec and their removal
     # (#1180) is a permitted diff.
-    original_lines = [
+    original_lines = _canon_interpreter_lines([
         l for l in _normalise(_git_show(platform.roundtrip_ref)).splitlines()
         if not _is_trigger_line(l)
-    ]
+    ])
 
     added = Counter(rendered_lines) - Counter(original_lines)
     removed = Counter(original_lines) - Counter(rendered_lines)

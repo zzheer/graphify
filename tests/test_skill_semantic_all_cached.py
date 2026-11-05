@@ -46,9 +46,9 @@ def _python_blocks(body: str, start: str, end: str) -> list[str]:
     section = body.split(start, 1)[1].split(end, 1)[0]
     sources = []
     for block in re.findall(r"```bash\n(.*?)```", section, re.S):
-        m = re.search(r' -c "\n(.*)\n"\s*$', block, re.S)
+        m = re.search(r" - <<'PY'\n(.*)\nPY\s*$", block, re.S)
         if m:
-            sources.append(m.group(1).replace('\\"', '"'))
+            sources.append(m.group(1))
     return sources
 
 

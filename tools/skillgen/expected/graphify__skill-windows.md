@@ -142,11 +142,13 @@ INPUT_PATH
 
 If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or `--break-system-packages`.
 
-**In every subsequent block, run Python through the saved interpreter — `& (Get-Content graphify-out\.graphify_python)` in place of a bare `python3` — so every step uses the interpreter that actually has graphify.**
+**Every later block starts with the same two `$GRAPHIFY_PYTHON` lines.** They read `graphify-out\.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is a plain path, an existing file, and an interpreter that can `import graphify`, and only then run it with the Python passed on stdin through a single-quoted here-string (`@' ... '@ | & $GRAPHIFY_PYTHON -`). Copy the two lines verbatim into every block, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or here-strings.
 
 ### Step 2 - Detect files
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.detect import detect
@@ -158,7 +160,7 @@ result = detect(Path('INPUT_PATH'), extra_excludes=_read_build_excludes(out_path
 # on PowerShell hosts without console-encoding drift (#2528).
 Path('graphify-out/.graphify_detect.json').write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 print(f'Detected {result["total_files"]} files')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
@@ -214,6 +216,8 @@ Note: Parallelizing AST + semantic saves 5-15s on large corpora. AST is determin
 For any code files detected, run AST extraction in parallel with Part B subagents:
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.extract import collect_files, extract
@@ -235,7 +239,7 @@ if code_files:
 else:
     Path('graphify-out/.graphify_ast.json').write_text(json.dumps({'nodes':[],'edges':[],'input_tokens':0,'output_tokens':0}, ensure_ascii=False), encoding="utf-8")
     print('No code files - skipping AST extraction')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 #### Part B - Semantic extraction (parallel subagents)
@@ -243,11 +247,13 @@ else:
 **Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do. **First write an empty semantic file** so Part C's merge has its input (it reads `.graphify_semantic.json` unconditionally; without this a code-only run hits `FileNotFoundError`):
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
 Path('graphify-out/.graphify_semantic.json').write_text(json.dumps({'nodes':[],'edges':[],'hyperedges':[],'input_tokens':0,'output_tokens':0}), encoding='utf-8')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 **MANDATORY: You MUST use the Agent tool here. Reading files yourself one-by-one is forbidden - it is 5-10x slower. If you do not use the Agent tool you are doing this wrong.**
@@ -265,6 +271,8 @@ Before dispatching any subagents, check which files already have cached extracti
 SPEC_PATH below is the **absolute** path of the `references/extraction-spec.md` that ships beside this SKILL.md — the same file Step B2 loads and hands to every subagent. It is the extraction prompt, so cache entries are attributed to it: when a graphify upgrade changes the prompt, entries produced by the old one are re-extracted instead of replayed, and unchanged prompts keep their entries (#1939). Substitute the real path in both Step B0 and Step B3 — pass the same one to each, and do not drop the argument.
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.cache import check_semantic_cache
@@ -290,7 +298,7 @@ Path('graphify-out/.graphify_uncached.txt').write_text('\n'.join(uncached), enco
 for stale in Path('graphify-out').glob('.graphify_chunk_*.json'):
     stale.unlink()
 print(f'Cache: {len(all_files)-len(uncached)} files hit, {len(uncached)} files need extraction')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Only dispatch subagents for files listed in `graphify-out/.graphify_uncached.txt`. If all files are cached, skip Steps B1 and B2 but still run Step B3's commands: its merge is the only Part B step that writes `graphify-out/.graphify_semantic.json`, and Part C reads that file unconditionally. Do not write an empty `.graphify_semantic.json` instead, because that drops every cached node.
@@ -342,6 +350,8 @@ If more than half the chunks failed or are missing, stop and tell the user to re
 A subagent that only read the first Read call's worth of a long file still writes a well-formed chunk, so "chunk file exists and parses" is not evidence of coverage. Compare each file's self-reported `coverage` against its real length:
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json, glob
 from pathlib import Path
@@ -370,13 +380,15 @@ if partial:
         print(f'  {src}: read {n} of {total} lines')
 else:
     print('Coverage OK - every file a subagent reported was read to its last line')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Tell the user which files came up short and what was lost (the line counts are printed above). The nodes already extracted for those files are kept - they are still true - but the file is cached as partial and left unstamped in the manifest below, so the next `--update` re-dispatches it and replace-on-re-extract swaps the partial node set for a complete one. This is the same mechanism the library path uses for a truncated LLM response (#933, #1950), so both paths now recover instead of silently keeping a half-read file forever. A file a subagent did not report at all is not counted as partial - there is nothing to compare against - which is why the prompt rule in `references/extraction-spec.md` asks for the count in the first place.
 
 Merge all chunk files into `.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json, glob
 from pathlib import Path
@@ -396,11 +408,13 @@ Path('graphify-out/.graphify_semantic_new.json').write_text(json.dumps({
     'input_tokens': total_in, 'output_tokens': total_out,
 }, indent=2, ensure_ascii=False), encoding="utf-8")
 print(f'Merged {len(chunks)} chunks: {total_in:,} in / {total_out:,} out tokens')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Save new results to cache. Pass the same SPEC_PATH as Step B0 — it stamps each entry with the prompt that produced it, and a write under a different prompt than the read lands where the next run won't look (#1939):
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.cache import save_semantic_cache
@@ -415,11 +429,13 @@ partial = [line for line in Path('graphify-out/.graphify_partial.txt').read_text
 saved = save_semantic_cache(new.get('nodes', []), new.get('edges', []), new.get('hyperedges', []), root='INPUT_PATH', allowed_source_files=uncached, prompt_file='SPEC_PATH', partial_source_files=partial)
 note = f' ({len(partial)} left partial for retry)' if partial else ''
 print(f'Cached {saved} files' + note)
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Merge cached + new results into `graphify-out/.graphify_semantic.json`:
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -446,13 +462,15 @@ merged = {
 }
 Path('graphify-out/.graphify_semantic.json').write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
 print(f'Extraction complete - {len(deduped)} nodes, {len(all_edges)} edges ({len(cached["nodes"])} from cache, {len(new.get("nodes",[]))} new)')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 Clean up temp files: `Remove-Item -Force -ErrorAction SilentlyContinue graphify-out\.graphify_cached.json, graphify-out\.graphify_uncached.txt, graphify-out\.graphify_semantic_new.json`
 
 #### Part C - Merge AST + semantic into final extraction
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from pathlib import Path
@@ -493,7 +511,7 @@ Path('graphify-out/.graphify_extract.json').write_text(json.dumps(merged, indent
 total = len(merged_nodes)
 edges = len(merged_edges)
 print(f'Merged: {total} nodes, {edges} edges ({len(ast["nodes"])} AST + {len(sem["nodes"])} semantic)')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 ### Step 4 - Build graph, cluster, analyze, generate outputs
@@ -502,6 +520,8 @@ print(f'Merged: {total} nodes, {edges} edges ({len(ast["nodes"])} AST + {len(sem
 
 ```powershell
 New-Item -ItemType Directory -Force -Path graphify-out | Out-Null
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.build import build_from_json
@@ -552,7 +572,7 @@ analysis = {
 }
 Path('graphify-out/.graphify_analysis.json').write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
 print(f'Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {len(communities)} communities')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 If this step prints `ERROR: Graph is empty`, stop and tell the user what happened - do not proceed to labeling or visualization.
@@ -564,6 +584,8 @@ Replace INPUT_PATH with the actual path.
 A non-destructive diagnostic on the extraction, before labeling. It surfaces edge collapse, dangling/missing endpoints, and self-loops — the silent-corruption modes of incremental updates and AST/LLM id mismatches. Read-only; never aborts.
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -580,7 +602,7 @@ flags = [f'{summary[k]} {label}' for k, label in (
     ('undirected_same_endpoint_collapsed_edges', 'collapsed (undirected) edges'),
 ) if summary.get(k, 0)]
 print('GRAPH HEALTH WARNING: ' + '; '.join(flags) + ' - graph may be incomplete/corrupt.' if flags else 'Graph health: OK (no dangling/missing/collapsed edges).')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
 Substitute `IS_DIRECTED` and `INPUT_PATH` as in Step 4. If a `GRAPH HEALTH WARNING` prints, surface it in the final summary (do not abort — the graph is still usable, but the integrity issue must be visible, per the Honesty Rules).
@@ -592,6 +614,8 @@ Read `graphify-out/.graphify_analysis.json`. For each community key, look at its
 Then regenerate the report and save the labels for the visualizer:
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.build import build_from_json
@@ -611,8 +635,8 @@ communities = {int(k): v for k, v in analysis['communities'].items()}
 cohesion = {int(k): v for k, v in analysis['cohesion'].items()}
 tokens = {'input': extraction.get('input_tokens', 0), 'output': extraction.get('output_tokens', 0)}
 
-# LABELS - replace these with the names you chose above
-labels = LABELS_DICT
+# LABELS - read from graphify-out/.graphify_labels.json (written by you, see below)
+labels = {int(k): v for k, v in json.loads(Path('graphify-out/.graphify_labels.json').read_text(encoding='utf-8')).items()}
 
 # Regenerate questions with real community labels (labels affect question phrasing)
 questions = suggest_questions(G, communities, labels)
@@ -628,10 +652,10 @@ if not wrote:
     print('ERROR: refused to shrink graphify-out/graph.json (existing graph has more nodes; #479).')
     print('If this shrink is intentional (you deleted files), re-run a full build with --force.')
 print('Report updated with community labels')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 ```
 
-Replace `LABELS_DICT` with the actual dict you constructed (e.g. `{0: "Attention Mechanism", 1: "Training Pipeline"}`).
+Before running it, write the labels you chose to `graphify-out/.graphify_labels.json` with your file-writing tool, as a JSON object keyed by community id (e.g. `{"0": "Attention Mechanism", "1": "Training Pipeline"}`). The block reads them from that file, so no label text is ever pasted into a command.
 Replace INPUT_PATH with the actual path.
 
 ### Step 6 - Generate Obsidian vault (opt-in) + HTML
@@ -663,6 +687,8 @@ These run only when their flag is present (`--wiki`, `--neo4j`/`--neo4j-push`, `
 ### Step 9 - Save manifest, update cost tracker, clean up, and report
 
 ```powershell
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -729,7 +755,7 @@ cost_path.write_text(json.dumps(cost, indent=2, ensure_ascii=False), encoding="u
 
 print(f'This run: {input_tok:,} input tokens, {output_tok:,} output tokens')
 print(f'All time: {cost["total_input_tokens"]:,} input, {cost["total_output_tokens"]:,} output ({len(cost["runs"])} runs)')
-'@ | & (Get-Content graphify-out\.graphify_python) -
+'@ | & $GRAPHIFY_PYTHON -
 Remove-Item -Force -ErrorAction SilentlyContinue graphify-out\.graphify_detect.json, graphify-out\.graphify_extract.json, graphify-out\.graphify_ast.json, graphify-out\.graphify_semantic.json, graphify-out\.graphify_analysis.json, graphify-out\.graphify_partial.txt
 Get-ChildItem graphify-out -Filter '.graphify_chunk_*.json' -File -ErrorAction SilentlyContinue | Remove-Item -Force
 Remove-Item -Force -ErrorAction SilentlyContinue graphify-out\.needs_update
@@ -772,10 +798,16 @@ The graph is the map. Your job after the pipeline is to be the guide.
 
 ## Interpreter guard for subcommands
 
-Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists. If it's missing (e.g. user deleted `graphify-out/`), re-resolve the interpreter first:
+Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists and is valid. If it is missing (e.g. user deleted `graphify-out/`), is not a plain executable path, or cannot import graphify, re-resolve the interpreter first:
 
 ```powershell
-if (-not (Test-Path graphify-out\.graphify_python)) {
+# graphify-out\.graphify_python is repository data: re-resolve it unless it is a
+# plain path to an existing interpreter that can import graphify.
+$GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue)
+if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
+$valid = $GRAPHIFY_PYTHON -and ($GRAPHIFY_PYTHON -match '^[A-Za-z0-9_./+@:\\ -]+$') -and (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)
+if ($valid) { & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; $valid = ($LASTEXITCODE -eq 0) }
+if (-not $valid) {
     $GRAPHIFY_PYTHON = $null
     $graphifyCmd = Get-Command graphify -ErrorAction SilentlyContinue
     if ($graphifyCmd) {
@@ -785,6 +817,8 @@ if (-not (Test-Path graphify-out\.graphify_python)) {
         if (Test-Path $py) { $GRAPHIFY_PYTHON = $py }
     }
     if (-not $GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = "python" }
+    & $GRAPHIFY_PYTHON -c "import graphify" 2>$null
+    if ($LASTEXITCODE -ne 0) { Write-Error "graphify is not importable: re-run Step 1"; exit 1 }
     New-Item -ItemType Directory -Force -Path graphify-out | Out-Null
     & $GRAPHIFY_PYTHON -c "import sys; open('graphify-out/.graphify_python', 'w', encoding='utf-8').write(sys.executable)"
 }

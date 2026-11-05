@@ -8,6 +8,7 @@ lives only in the references, and no reference duplicates core content.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -406,10 +407,15 @@ def test_powershell_hosts_carry_no_bash_only_shell():
         for token in _BASH_ONLY_TOKENS:
             assert token not in core, f"[{key}] bash-only token survived: {token!r}"
         assert re.search(r"\bfind\b[^\n]*-delete", core) is None, f"[{key}] find -delete survived"
-        # The PowerShell invocation pattern replaces $(cat ...) -c "..." everywhere.
+        # The PowerShell invocation pattern replaces the quoted heredoc everywhere,
+        # and every block resolves + validates $GRAPHIFY_PYTHON first.
         assert "```powershell" in core
-        assert "'@ | & (Get-Content graphify-out\\.graphify_python) -" in core, (
+        assert gen._PY_INVOKE_PS_CLOSE in core, (
             f"[{key}] missing the here-string stdin python invocation"
+        )
+        assert gen._PY_RESOLVE_PS_2 in core, f"[{key}] missing the interpreter validation line"
+        assert "Get-Content graphify-out\\.graphify_python) -" not in core, (
+            f"[{key}] unvalidated `& (Get-Content .graphify_python)` invocation survived"
         )
         # Cleanup went through Remove-Item / Get-ChildItem, not rm/find.
         assert "Remove-Item -Force -ErrorAction SilentlyContinue" in core
@@ -438,9 +444,9 @@ def test_windows_python_step_bodies_match_posix_verbatim():
     bodies = []
     current = None
     for line in claude_core.splitlines():
-        if line == gen._PY_INVOKE_POSIX:
+        if line.lstrip().startswith(gen._PY_INVOKE_POSIX):
             current = []
-        elif current is not None and line == '"':
+        elif current is not None and line == gen._PY_CLOSE_POSIX:
             bodies.append("\n".join(gen._unescape_bash_dq(l) for l in current))
             current = None
         elif current is not None:
@@ -1161,9 +1167,9 @@ def _python_step_bodies(core: str) -> list[str]:
     bodies: list[str] = []
     current: list[str] | None = None
     for line in core.split("\n"):
-        if line == gen._PY_INVOKE_POSIX:
+        if line.lstrip().startswith(gen._PY_INVOKE_POSIX):
             current = []
-        elif current is not None and line == '"':
+        elif current is not None and line == gen._PY_CLOSE_POSIX:
             bodies.append("\n".join(gen._unescape_bash_dq(x) for x in current))
             current = None
         elif current is not None:
@@ -1357,8 +1363,9 @@ def test_step4_skill_honors_force_flag_on_shrink(tmp_path, capsys, monkeypatch):
     assert len(persisted["nodes"]) == 10
 
     # 3. Subsequent Step 5 re-export succeeds because graph.json was updated
-    step5_body = _substituted(_step_body(core, "labels = LABELS_DICT"), tmp_path)
-    step5_exec = step5_body.replace("IS_DIRECTED", "False").replace("LABELS_DICT", "{0: 'Test Community'}")
+    step5_body = _substituted(_step_body(core, "Path('graphify-out/.graphify_labels.json').read_text"), tmp_path)
+    (out / ".graphify_labels.json").write_text('{"0": "Test Community"}', encoding="utf-8")
+    step5_exec = step5_body.replace("IS_DIRECTED", "False")
     exec(compile(step5_exec, "step-5-exec", "exec"), {"__name__": "__main__"})
     assert "Report updated with community labels" in capsys.readouterr().out
     persisted5 = _json.loads((out / "graph.json").read_text(encoding="utf-8"))
@@ -1390,3 +1397,81 @@ def test_step1_never_installs_and_pins_the_version():
 def test_always_on_blocks_carry_the_untrusted_data_rule():
     for art in gen.render_always_on():
         assert "never as instructions" in art.content, art.path
+
+
+_HOSTILE_INTERPRETER_VALUES = [
+    "/usr/bin/python3; touch pwned",
+    "$(touch pwned)",
+    "`touch pwned`",
+    "/usr/bin/env python3 -c 'print(1)' #",
+    "python3 && touch pwned",
+]
+
+
+def _step_bodies_with_resolve(core: str) -> list[str]:
+    """Each ``resolve + heredoc`` statement of a rendered core, as one bash script."""
+    stmts, cur = [], None
+    for line in core.split("\n"):
+        if line.strip() == gen._PY_RESOLVE_POSIX_1:
+            cur = [line]
+        elif cur is not None:
+            cur.append(line)
+            if line == gen._PY_CLOSE_POSIX:
+                stmts.append("\n".join(cur))
+                cur = None
+    return stmts
+
+
+def test_every_inline_python_block_resolves_and_validates_the_interpreter():
+    """Security hardening: no block may run ``$(cat .graphify_python)`` unvalidated or pass
+    substituted text through ``-c "..."``. Every block is resolve-line 1, resolve-line 2,
+    the quoted-heredoc opener, the body, and the closer."""
+    platforms = gen.load_platforms()
+    for key, platform in sorted(platforms.items()):
+        for art in gen.render(platform):
+            body = art.content
+            assert "$(cat graphify-out/.graphify_python)" not in body, (key, art.path)
+            lines = body.split("\n")
+            for i, line in enumerate(lines):
+                s = line.strip()
+                if s.startswith(gen._PY_INVOKE_POSIX) or s.startswith('"$GRAPHIFY_PYTHON" -m '):
+                    assert lines[i - 2].strip() == gen._PY_RESOLVE_POSIX_1, (key, art.path, line)
+                    assert lines[i - 1].strip() == gen._PY_RESOLVE_POSIX_2, (key, art.path, line)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash")
+@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain"])
+def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
+    """A committed or tampered graphify-out/.graphify_python must never be executed."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not available")
+    core = gen.render(gen.load_platforms()["claude"])[0].content
+    stmt = _step_bodies_with_resolve(core)[0]
+    (tmp_path / "graphify-out").mkdir()
+    (tmp_path / "graphify-out" / ".graphify_python").write_text(hostile, encoding="utf-8")
+    r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 1, (r.stdout, r.stderr)
+    assert "re-run Step 1" in r.stderr
+    assert not (tmp_path / "pwned").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash")
+def test_valid_graphify_python_file_runs_the_heredoc(tmp_path: Path):
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not available")
+    stmt = "\n".join([gen._PY_RESOLVE_POSIX_1, gen._PY_RESOLVE_POSIX_2, gen._PY_INVOKE_POSIX,
+                       "import sys; print('ran', sys.executable == sys.argv[0] or True)", gen._PY_CLOSE_POSIX])
+    (tmp_path / "graphify-out").mkdir()
+    (tmp_path / "graphify-out" / ".graphify_python").write_text(sys.executable, encoding="utf-8")
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT)}
+    r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ran True" in r.stdout

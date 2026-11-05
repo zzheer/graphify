@@ -2101,7 +2101,7 @@ def dispatch_command(cmd: str) -> None:
         import argparse as _ap
 
         p = _ap.ArgumentParser(prog="graphify save-result")
-        p.add_argument("--question", required=True)
+        p.add_argument("--question", default=None)
         p.add_argument("--answer", default=None)
         p.add_argument("--answer-file", dest="answer_file", default=None)
         p.add_argument("--type", dest="query_type", default="query")
@@ -2109,7 +2109,32 @@ def dispatch_command(cmd: str) -> None:
         p.add_argument("--outcome", choices=("useful", "dead_end", "corrected"), default=None)
         p.add_argument("--correction", default=None)
         p.add_argument("--memory-dir", default=str(Path(_GRAPHIFY_OUT) / "memory"))
+        p.add_argument(
+            "--from-json",
+            dest="from_json",
+            default=None,
+            help="Read question/answer/type/nodes/outcome/correction from a JSON file "
+            "(model- and graph-derived text never has to go on the command line)",
+        )
         opts = p.parse_args(sys.argv[2:])
+        if opts.from_json:
+            import json as _json
+
+            payload = _json.loads(Path(opts.from_json).read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                p.error("--from-json must hold a JSON object")
+            for key in ("question", "answer", "nodes", "outcome", "correction"):
+                if payload.get(key) is not None:
+                    setattr(opts, key, payload[key])
+            if payload.get("type"):
+                opts.query_type = str(payload["type"])
+            if not isinstance(opts.nodes, list):
+                p.error("--from-json: 'nodes' must be a list of node labels")
+            opts.nodes = [str(n) for n in opts.nodes]
+            if opts.outcome is not None and opts.outcome not in ("useful", "dead_end", "corrected"):
+                p.error("--from-json: 'outcome' must be useful, dead_end or corrected")
+        if not opts.question:
+            p.error("--question (or 'question' in --from-json) is required")
         if opts.answer_file:
             opts.answer = Path(opts.answer_file).read_text(encoding="utf-8").strip()
         elif not opts.answer:
