@@ -664,7 +664,7 @@ def _wrap_untrusted(rel: str, content: str) -> str:
 # gate at the one place where file text is actually put into a prompt.
 _LLM_EXCLUDED_SUFFIXES = frozenset({".yml", ".yaml", ".tfvars", ".pem", ".key", ".p12", ".pfx"})
 _LLM_EXCLUDED_NAME_RE = re.compile(
-    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)|secrets?|credentials?",
+    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)|(?<![A-Za-z])(secrets?|credentials?)(?![A-Za-z])",
     re.IGNORECASE,
 )
 _LLM_INCLUDE_SENSITIVE_ENV = "GRAPHIFY_LLM_INCLUDE_SENSITIVE"

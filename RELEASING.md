@@ -9,7 +9,10 @@ manage.
 
 ## Steps
 
-1. **Bump the version.** Edit `version` in `pyproject.toml`.
+1. **Bump the version.** Edit `version` in `pyproject.toml`, then regenerate the
+   skill files, which embed it in the pinned install command Step 1 shows:
+   `uv run python -m tools.skillgen && uv run python -m tools.skillgen --bless`
+   (CI's `skillgen --check` fails otherwise).
 2. **Update the changelog.** Add a dated section for the new version at the top of
    `CHANGELOG.md`, crediting each landed PR and its author.
 3. **Refresh the lock.** Run `uv lock` so `uv.lock` records the new version (and

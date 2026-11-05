@@ -41,7 +41,11 @@ EXCLUDED_NAMES = [
     "SECRETS.md",
 ]
 
-ALLOWED_NAMES = ["README.md", "design.txt", "paper.pdf", "notes.rst", "api.md"]
+ALLOWED_NAMES = [
+    "README.md", "design.txt", "paper.pdf", "notes.rst", "api.md",
+    # keyword buried inside a word is a topic, not a credential store
+    "secretary.md", "secretive-design.md", "credentialed_users.md",
+]
 
 
 @pytest.mark.parametrize("name", EXCLUDED_NAMES)
