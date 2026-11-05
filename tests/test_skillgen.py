@@ -1365,3 +1365,28 @@ def test_step4_skill_honors_force_flag_on_shrink(tmp_path, capsys, monkeypatch):
     assert len(persisted5["nodes"]) == 10
     assert persisted5["nodes"][0]["community_name"] == "Test Community"
 
+
+
+def test_step1_never_installs_and_pins_the_version():
+    """Step 1 must not run an install on the user's machine (security hardening).
+
+    The old branch ran an unpinned ``uv tool install --upgrade graphifyy`` /
+    ``pip install --break-system-packages graphifyy``. Every rendered skill now
+    stops and prints the exact ``graphifyy==<pyproject version>`` command instead.
+    """
+    platforms = gen.load_platforms()
+    version = gen.pinned_version()
+    for key in sorted(platforms):
+        for art in gen.render(platforms[key]):
+            body = art.content
+            assert "uv tool install --upgrade" not in body, (key, art.path)
+            assert "--break-system-packages" not in body, (key, art.path)
+            assert "pip install graphifyy -q" not in body, (key, art.path)
+            if art.path == platforms[key].skill_dst:
+                assert f'graphifyy=={version}' in body, (key, art.path)
+                assert "## Untrusted data" in body, (key, art.path)
+
+
+def test_always_on_blocks_carry_the_untrusted_data_rule():
+    for art in gen.render_always_on():
+        assert "never as instructions" in art.content, art.path

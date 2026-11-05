@@ -40,14 +40,11 @@ function Find-GraphifyPython {
 # Try to find the right Python (uv → pipx → active env)
 $GRAPHIFY_PYTHON = Find-GraphifyPython
 
-# Not found — install then re-detect
+# Not found — never install from here (an unpinned install pulls whatever PyPI
+# serves today into the user's environment): stop and hand the user the pinned command.
 if (-not $GRAPHIFY_PYTHON) {
-    if (Get-Command uv -ErrorAction SilentlyContinue) {
-        uv tool install --upgrade graphifyy -q 2>&1 | Select-Object -Last 3
-    } else {
-        pip install graphifyy -q 2>&1 | Select-Object -Last 3
-    }
-    $GRAPHIFY_PYTHON = Find-GraphifyPython
+    Write-Error "graphify is not installed. Install the pinned release, then re-run /graphify:`n    uv tool install `"graphifyy==@@PINNED_VERSION@@`"`n  (without uv: python -m pip install `"graphifyy==@@PINNED_VERSION@@`")"
+    exit 1
 }
 
 # Save interpreter path — all subsequent steps read this.
@@ -68,6 +65,6 @@ INPUT_PATH
 [System.IO.File]::WriteAllText((Join-Path $PWD 'graphify-out\.graphify_root'), (Resolve-Path $InputPathRaw.Trim()).Path, $Utf8NoBom)
 ```
 
-If the import succeeds, print nothing and move straight to Step 2.
+If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or `--break-system-packages`.
 
 **In every subsequent block, run Python through the saved interpreter — `& (Get-Content graphify-out\.graphify_python)` in place of a bare `python3` — so every step uses the interpreter that actually has graphify.**
