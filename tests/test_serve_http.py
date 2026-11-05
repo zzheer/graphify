@@ -365,6 +365,79 @@ def test_cli_api_key_from_env(monkeypatch):
     assert captured["api_key"] == "from-env"
 
 
+# --- Non-loopback bind guard ----------------------------------------------
+
+def _stub_uvicorn(monkeypatch, calls: dict):
+    import sys as _sys
+    import types as _types
+    monkeypatch.setitem(_sys.modules, "uvicorn", _types.SimpleNamespace(
+        run=lambda app, host, port: calls.update(host=host, port=port)
+    ))
+    monkeypatch.setattr(serve_mod, "_build_http_app", lambda *a, **k: object())
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]", "127.0.0.2"])
+def test_loopback_hosts_are_loopback(host):
+    assert serve_mod._is_loopback_host(host) is True
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "", "192.168.1.10", "10.0.0.1", "example.com"])
+def test_non_loopback_hosts_are_not_loopback(host):
+    assert serve_mod._is_loopback_host(host) is False
+
+
+def test_serve_http_refuses_non_loopback_without_api_key(tmp_path, monkeypatch, capsys):
+    calls: dict = {}
+    _stub_uvicorn(monkeypatch, calls)
+    with pytest.raises(SystemExit) as exc:
+        serve_mod.serve_http(_graph_file(tmp_path), host="0.0.0.0", api_key=None)
+    assert exc.value.code == 2
+    assert "refusing to bind" in capsys.readouterr().err
+    assert calls == {}  # uvicorn never started
+
+
+def test_serve_http_refuses_lan_address_without_api_key(tmp_path, monkeypatch):
+    calls: dict = {}
+    _stub_uvicorn(monkeypatch, calls)
+    with pytest.raises(SystemExit):
+        serve_mod.serve_http(_graph_file(tmp_path), host="192.168.1.10", api_key="   ")
+    assert calls == {}
+
+
+def test_serve_http_allow_unauthenticated_binds_with_warning(tmp_path, monkeypatch, capsys):
+    calls: dict = {}
+    _stub_uvicorn(monkeypatch, calls)
+    serve_mod.serve_http(
+        _graph_file(tmp_path), host="0.0.0.0", api_key=None, allow_unauthenticated=True
+    )
+    assert calls["host"] == "0.0.0.0"
+    assert "WARNING" in capsys.readouterr().err
+
+
+def test_serve_http_non_loopback_with_api_key_binds(tmp_path, monkeypatch):
+    calls: dict = {}
+    _stub_uvicorn(monkeypatch, calls)
+    serve_mod.serve_http(_graph_file(tmp_path), host="0.0.0.0", api_key="s3cret")
+    assert calls["host"] == "0.0.0.0"
+
+
+def test_serve_http_loopback_without_api_key_binds(tmp_path, monkeypatch):
+    calls: dict = {}
+    _stub_uvicorn(monkeypatch, calls)
+    serve_mod.serve_http(_graph_file(tmp_path), host="127.0.0.1", api_key=None)
+    assert calls["host"] == "127.0.0.1"
+
+
+def test_cli_allow_unauthenticated_flag(monkeypatch):
+    captured = {}
+    monkeypatch.delenv("GRAPHIFY_API_KEY", raising=False)
+    monkeypatch.setattr(serve_mod, "serve_http", lambda gp, **k: captured.update(**k))
+    serve_mod._main(["g.json", "--transport", "http", "--host", "0.0.0.0"])
+    assert captured["allow_unauthenticated"] is False
+    serve_mod._main(["g.json", "--transport", "http", "--host", "0.0.0.0", "--allow-unauthenticated"])
+    assert captured["allow_unauthenticated"] is True
+
+
 def test_pr_tool_failure_sets_iserror(tmp_path, monkeypatch):
     """ADR-0001 finding 4: a PR tool that fails because gh is missing / not
     authenticated must return isError:true, not a successful text result."""
