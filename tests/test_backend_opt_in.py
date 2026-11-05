@@ -76,3 +76,50 @@ def test_generate_community_labels_skips_claude_cli_when_disabled(monkeypatch):
     assert source == "placeholder"
     assert labels == {0: "Community 0", 1: "Community 1"}
     assert calls["n"] == 0, "no backend may be contacted when GRAPHIFY_BACKEND=none"
+
+
+# --- GRAPHIFY_NO_LLM hard kill switch (#2781) ------------------------------
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on"])
+def test_graphify_no_llm_forces_no_backend(monkeypatch, value):
+    monkeypatch.setenv("GEMINI_API_KEY", "ambient")
+    monkeypatch.setenv("GRAPHIFY_BACKEND", "openai")  # explicit choice loses too
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", value)
+    backend, source = llm.detect_backend_with_source()
+    assert backend is None
+    assert source == f"GRAPHIFY_NO_LLM={value}"
+    assert llm.detect_backend() is None
+    assert llm.backend_disabled_by_env() is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "off"])
+def test_graphify_no_llm_falsy_values_do_not_disable(monkeypatch, value):
+    monkeypatch.setenv("GEMINI_API_KEY", "ambient")
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", value)
+    assert llm.detect_backend() == "gemini"
+    assert llm.backend_disabled_by_env() is False
+
+
+def test_extract_files_direct_refuses_even_explicit_backend_when_no_llm(monkeypatch):
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    with pytest.raises(ValueError, match="GRAPHIFY_NO_LLM=1"):
+        llm.extract_files_direct([], backend="gemini")
+
+
+def test_generate_community_labels_skips_llm_when_no_llm(monkeypatch):
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    monkeypatch.setattr(llm, "_claude_cli_available", lambda: True)
+    calls = {"n": 0}
+
+    def _spy(*args, **kwargs):  # pragma: no cover - must not run
+        calls["n"] += 1
+        return {}
+
+    monkeypatch.setattr(llm, "label_communities", _spy)
+    # An explicit backend= must not bypass the kill switch either.
+    labels, source = llm.generate_community_labels(
+        None, {0: ["a"], 1: ["b"]}, backend="gemini", quiet=True
+    )
+    assert source == "placeholder"
+    assert labels == {0: "Community 0", 1: "Community 1"}
+    assert calls["n"] == 0

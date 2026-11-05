@@ -654,6 +654,61 @@ def _wrap_untrusted(rel: str, content: str) -> str:
     )
 
 
+# Files whose raw text must never be shipped to a remote LLM backend (#2781).
+# Deployment/config formats routinely embed live credentials (CI secrets in a
+# workflow .yml, a docker-compose with passwords, a tfvars file) and the
+# structural extractors already cover them without a model, so they are
+# excluded from the semantic (LLM) prompt by default. ``detect._is_sensitive``
+# covers the credential-store names (.env*, *.pem/.key/.p12/.pfx, id_rsa*,
+# *secrets*, *credentials*, ...); the checks below are a second, independent
+# gate at the one place where file text is actually put into a prompt.
+_LLM_EXCLUDED_SUFFIXES = frozenset({".yml", ".yaml", ".tfvars", ".pem", ".key", ".p12", ".pfx"})
+_LLM_EXCLUDED_NAME_RE = re.compile(
+    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)|secrets?|credentials?",
+    re.IGNORECASE,
+)
+_LLM_INCLUDE_SENSITIVE_ENV = "GRAPHIFY_LLM_INCLUDE_SENSITIVE"
+
+
+def _llm_excluded_reason(path: Path) -> str | None:
+    """Why ``path``'s raw text must not be sent to an LLM backend, or None.
+
+    Opt out (send everything) with ``GRAPHIFY_LLM_INCLUDE_SENSITIVE=1``.
+    """
+    if os.environ.get(_LLM_INCLUDE_SENSITIVE_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return None
+    name = path.name
+    if path.suffix.lower() in _LLM_EXCLUDED_SUFFIXES:
+        return f"{path.suffix.lower()} files are not sent to LLM backends"
+    if _LLM_EXCLUDED_NAME_RE.search(name):
+        return "credential-like file name"
+    try:
+        from graphify.detect import _is_sensitive
+        if _is_sensitive(path):
+            return "sensitive file"
+    except Exception:  # noqa: BLE001 - the name/suffix checks above still apply
+        pass
+    return None
+
+
+_llm_excluded_warned: set[str] = set()
+
+
+def _skip_llm_excluded(p: Path, rel: str) -> bool:
+    """Log once per path and return True when ``p`` must stay out of the prompt."""
+    reason = _llm_excluded_reason(p)
+    if reason is None:
+        return False
+    if rel not in _llm_excluded_warned:
+        _llm_excluded_warned.add(rel)
+        print(
+            f"[graphify] not sending {rel} to the LLM backend ({reason}; "
+            f"set {_LLM_INCLUDE_SENSITIVE_ENV}=1 to override)",
+            file=sys.stderr,
+        )
+    return True
+
+
 def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
     """Return file/slice contents formatted for the extraction prompt.
 
@@ -680,6 +735,8 @@ def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
             rel = p.relative_to(root).as_posix()
         except ValueError:
             rel = Path(p).as_posix()
+        if _skip_llm_excluded(p, rel):
+            continue
         try:
             if isinstance(u, FileSlice):
                 content = read_slice_text(u)
@@ -746,7 +803,7 @@ def _dispatched_source_text(units: "list[Path | FileSlice]", root: Path) -> dict
     for u in units:
         p = unit_path(u)
         safe = _resolve_under_root(p, root)
-        if safe is None:
+        if safe is None or _llm_excluded_reason(p) is not None:
             continue
         try:
             content = read_slice_text(u) if isinstance(u, FileSlice) else _file_to_text(safe)
@@ -2147,6 +2204,12 @@ def extract_files_direct(
     untouched — Path(FileSlice) would raise (#1397/#1399).
     """
     files = [f if isinstance(f, (Path, FileSlice)) else Path(f) for f in files]
+    if _no_llm_forced():
+        # Hard kill switch (#2781): wins even over an explicit backend= argument,
+        # so no corpus text can leave the machine while it is set.
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to run semantic extraction."
+        )
     if backend is None:
         if backend_disabled_by_env():
             raise ValueError(
@@ -3487,6 +3550,16 @@ def backend_detection_env_vars() -> tuple[str, ...]:
 
 # Values of GRAPHIFY_BACKEND that mean "do not use any LLM backend".
 _BACKEND_DISABLE_SENTINELS = frozenset({"none", "off", "disable", "disabled"})
+_NO_LLM_ENV = "GRAPHIFY_NO_LLM"
+
+
+def _no_llm_forced() -> bool:
+    """True when ``GRAPHIFY_NO_LLM=1`` forces the no-backend path (#2781).
+
+    A hard kill switch for environments where no corpus text may leave the
+    machine: it wins over ``GRAPHIFY_BACKEND`` and every ambient API key.
+    """
+    return os.environ.get(_NO_LLM_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _graphify_backend_setting() -> str | None:
@@ -3507,6 +3580,8 @@ def backend_disabled_by_env() -> bool:
     "no provider was found", so it can skip the LLM step with the right message
     instead of reporting a missing key (#4361).
     """
+    if _no_llm_forced():
+        return True
     value = _graphify_backend_setting()
     return value is not None and value.lower() in _BACKEND_DISABLE_SENTINELS
 
@@ -3537,6 +3612,8 @@ def detect_backend_with_source() -> "tuple[str | None, str]":
     key now keeps you on the paid backend; remove the paid key (or pass
     --backend ollama explicitly) to route to the local model.
     """
+    if _no_llm_forced():
+        return None, f"{_NO_LLM_ENV}={os.environ.get(_NO_LLM_ENV, '').strip()}"
     setting = _graphify_backend_setting()
     if setting is not None:
         if setting.lower() in _BACKEND_DISABLE_SENTINELS:
@@ -3916,10 +3993,10 @@ def generate_community_labels(
     ``GRAPHIFY_BACKEND=none`` disables the whole step, including the ``claude
     -p`` fallback below, so a user can keep LLM work off no matter what is on
     PATH (#4361)."""
-    if backend is None and backend_disabled_by_env():
+    if (backend is None and backend_disabled_by_env()) or _no_llm_forced():
         if not quiet:
             print(
-                "[graphify label] LLM backends disabled by GRAPHIFY_BACKEND=none; "
+                "[graphify label] LLM backends disabled by GRAPHIFY_BACKEND=none / GRAPHIFY_NO_LLM=1; "
                 "keeping Community N placeholders.",
                 file=sys.stderr,
             )
