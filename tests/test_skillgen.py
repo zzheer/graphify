@@ -1417,6 +1417,8 @@ _HOSTILE_INTERPRETER_VALUES = [
     "/proc/self/cwd/tools/py",
     "/usr/../proc/self/cwd/tools/py",
     "/dev/fd/3",
+    # Drive-relative: on POSIX this is a plain relative path inside the checkout.
+    "C:tools/py",
 ]
 
 
@@ -1452,7 +1454,7 @@ def test_every_inline_python_block_resolves_and_validates_the_interpreter():
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bash")
-@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare", "proc_cwd", "dotdot", "dev_fd"])
+@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare", "proc_cwd", "dotdot", "dev_fd", "drive_relative"])
 def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     """A committed or tampered graphify-out/.graphify_python must never be executed."""
     import shutil
@@ -1466,10 +1468,10 @@ def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     (tmp_path / "graphify-out").mkdir()
     (tmp_path / "graphify-out" / ".graphify_python").write_text(hostile, encoding="utf-8")
     # The committed "interpreter" the relative-path values point at.
-    (tmp_path / "tools").mkdir()
-    planted = tmp_path / "tools" / "py"
-    planted.write_text("#!/bin/sh\ntouch pwned\n", encoding="utf-8")
-    planted.chmod(0o755)
+    for planted in (tmp_path / "tools" / "py", tmp_path / "C:tools" / "py"):
+        planted.parent.mkdir()
+        planted.write_text("#!/bin/sh\ntouch pwned\n", encoding="utf-8")
+        planted.chmod(0o755)
     r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert r.returncode == 1, (r.stdout, r.stderr)
     assert "re-run Step 1" in r.stderr
@@ -1492,6 +1494,42 @@ def test_valid_graphify_python_file_runs_the_heredoc(tmp_path: Path):
     r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "ran True" in r.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash")
+@pytest.mark.parametrize("saved, ok", [
+    ("/opt/py (x86)/bin/python", False),
+    ("/home/user/.local/share/uv/tools/graphifyy/bin/python", True),
+    ("/Users/u/Library/Application Support/venv/bin/python", True),
+    ("C:/Users/JOHNDO~1/python.exe", False),
+])
+def test_step1_check_explains_a_path_later_blocks_would_refuse(tmp_path: Path, saved: str, ok: bool):
+    """Step 1 re-reads the path it saved through the resolve filter and stops with an
+    explanation when later blocks would refuse it, instead of looping on 're-run Step 1'."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not available")
+    (tmp_path / "graphify-out").mkdir()
+    (tmp_path / "graphify-out" / ".graphify_python").write_text(saved, encoding="utf-8")
+    stmt = "\n".join([gen._PY_STEP1_CHECK_POSIX_1, gen._PY_STEP1_CHECK_POSIX_2, "echo accepted"])
+    r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    if ok:
+        assert r.returncode == 0 and "accepted" in r.stdout, (r.stdout, r.stderr)
+    else:
+        assert r.returncode == 1 and "re-running Step 1 would not help" in r.stderr, (r.stdout, r.stderr)
+
+
+def test_step1_runs_the_saved_path_check_after_writing_it():
+    platforms = gen.load_platforms()
+    for key, platform in sorted(platforms.items()):
+        if platform.shell != "posix":
+            continue
+        body = gen.render(platform)[0].content
+        assert gen._PY_STEP1_CHECK_POSIX_1 in body, key
+        assert gen._PY_STEP1_CHECK_POSIX_2 in body, key
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bash")

@@ -12,7 +12,7 @@ Two traversal modes - choose based on the question:
 First check the graph exists:
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 from pathlib import Path
 if not Path('graphify-out/graph.json').exists():
@@ -31,7 +31,7 @@ Fix this **without inventing tokens** by expanding the query against the actual 
 1. Extract the token vocabulary from node labels:
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, re
 from pathlib import Path
@@ -82,7 +82,7 @@ If the CLI is unavailable, load `graphify-out/graph.json` and run the traversal 
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from networkx.readwrite import json_graph
@@ -183,7 +183,7 @@ After writing the answer, save it back into the graph so it improves future quer
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" -m graphify save-result --from-json graphify-out/.graphify_result.json
 ```
 
@@ -211,7 +211,7 @@ If the CLI is unavailable, run it inline:
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, sys
 import networkx as nx
@@ -261,15 +261,13 @@ PY
 
 Replace `NODE_A` and `NODE_B` with the actual concept names from the user. Then explain the path in plain language - what each hop means, why it's significant.
 
-After writing the explanation, save it back (`type` is `path_query`, `question` is `Path from <A> to <B>`):
+After writing the explanation, write `graphify-out/.graphify_result.json` with your file-writing tool: `{"question": "Path from <A> to <B>", "answer": "<your full path explanation>", "type": "path_query", "nodes": ["<node label on the path>", ...]}` (the answer and node labels are model- and graph-derived text, so they never go on the command line), then save it back:
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" -m graphify save-result --from-json graphify-out/.graphify_result.json
 ```
-
-Before running it, write `graphify-out/.graphify_result.json` with your file-writing tool: `{"question": "Path from <A> to <B>", "answer": "<your full path explanation>", "type": "path_query", "nodes": ["<node label on the path>", ...]}`. The answer and node labels are model- and graph-derived text, so they never go on the command line.
 
 ---
 
@@ -285,7 +283,7 @@ If the CLI is unavailable, run it inline:
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, sys
 import networkx as nx
@@ -328,12 +326,10 @@ PY
 
 Replace `NODE_NAME` with the concept the user asked about. Then write a 3-5 sentence explanation of what this node is, what it connects to, and why those connections are significant. Use the source locations as citations.
 
-After writing the explanation, save it back (`type` is `explain`, `question` is `Explain <node>`):
+After writing the explanation, write `graphify-out/.graphify_result.json` with your file-writing tool: `{"question": "Explain <node>", "answer": "<your full explanation>", "type": "explain", "nodes": ["<node label>", "<connected node label>", ...]}` (the answer and node labels are model- and graph-derived text, so they never go on the command line), then save it back:
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" -m graphify save-result --from-json graphify-out/.graphify_result.json
 ```
-
-Before running it, write `graphify-out/.graphify_result.json` with your file-writing tool: `{"question": "Explain <node>", "answer": "<your full explanation>", "type": "explain", "nodes": ["<node label>", "<connected node label>", ...]}`. The answer and node labels are model- and graph-derived text, so they never go on the command line.
