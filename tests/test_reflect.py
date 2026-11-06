@@ -956,3 +956,34 @@ def test_ambiguous_or_unresolved_citation_is_skipped(tmp_path):
     # Ambiguous "Dup" skipped; only the unambiguous "Solo" survives.
     assert "dup_a" not in nodes and "dup_b" not in nodes
     assert "solo" in nodes
+
+
+def test_cli_save_result_from_json(tmp_path):
+    """--from-json reads question/answer/type/nodes/outcome from a file so model- and
+    graph-derived text never has to be quoted onto a command line (security hardening)."""
+    import json as _json
+    payload = tmp_path / "result.json"
+    payload.write_text(_json.dumps({
+        "question": "how does auth work?",
+        "answer": "JWT in `middleware`; $(not expanded) `not run`",
+        "type": "query",
+        "nodes": ["AuthMiddleware", "Weird `label`"],
+        "outcome": "useful",
+    }), encoding="utf-8")
+    r = _run(["save-result", "--from-json", str(payload)], tmp_path)
+    assert r.returncode == 0, r.stderr
+    docs = list((tmp_path / "graphify-out" / "memory").glob("*.md"))
+    assert docs, "save-result wrote no memory doc"
+    body = docs[0].read_text(encoding="utf-8")
+    assert "how does auth work?" in body
+    assert "$(not expanded)" in body
+    assert "AuthMiddleware" in body
+
+
+def test_cli_save_result_from_json_requires_question(tmp_path):
+    import json as _json
+    payload = tmp_path / "result.json"
+    payload.write_text(_json.dumps({"answer": "a"}), encoding="utf-8")
+    r = _run(["save-result", "--from-json", str(payload)], tmp_path)
+    assert r.returncode != 0
+    assert "question" in (r.stderr + r.stdout)

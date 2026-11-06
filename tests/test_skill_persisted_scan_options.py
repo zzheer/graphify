@@ -18,9 +18,9 @@ def _scan_blocks():
         for block in re.findall(r'```bash\n(.*?)```', art.content, re.S):
             if "result = detect(Path('INPUT_PATH')" not in block and "result = detect_incremental(Path('INPUT_PATH')" not in block:
                 continue
-            m = re.search(r' -c "\n(.*)\n"', block, re.S)
+            m = re.search(r" - <<'PY'\n(.*)\nPY", block, re.S)
             if m:
-                found.append((art.path, m.group(1).replace('\\"', '"')))
+                found.append((art.path, m.group(1)))
     assert len(found) == 31
     return found
 

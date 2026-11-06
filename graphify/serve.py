@@ -3394,6 +3394,25 @@ def _build_http_app(
     )
 
 
+def _is_loopback_host(host: str) -> bool:
+    """True when ``host`` only reaches this machine (127.0.0.0/8, ::1, localhost).
+
+    ``0.0.0.0``, ``::``, an empty host, and any LAN/public address are NOT
+    loopback: binding them publishes the graph to the network.
+    """
+    import ipaddress
+
+    h = (host or "").strip().strip("[]")
+    if not h:
+        return False
+    if h.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
 def serve_http(
     graph_path: str | None = None,
     *,
@@ -3404,6 +3423,7 @@ def serve_http(
     json_response: bool = False,
     stateless: bool = False,
     session_timeout: float | None = 3600.0,
+    allow_unauthenticated: bool = False,
 ) -> None:
     """Start the MCP server over Streamable HTTP (MCP spec 2025-03-26).
 
@@ -3413,8 +3433,10 @@ def serve_http(
 
     ``api_key`` (or the ``GRAPHIFY_API_KEY`` env var) enables a simple header
     check (``Authorization: Bearer <key>`` or ``X-API-Key: <key>``). OAuth is a
-    deliberate follow-up. Binding ``0.0.0.0`` exposes the server beyond
-    localhost — set an api_key when you do.
+    deliberate follow-up. Binding a non-loopback host (``0.0.0.0``, ``::``, a
+    LAN address) exposes the server beyond localhost, so it is refused without
+    an api_key unless ``allow_unauthenticated`` (``--allow-unauthenticated``)
+    is passed explicitly.
     """
     graph_path = graph_path or _default_graph_json()
     try:
@@ -3426,6 +3448,22 @@ def serve_http(
         ) from e
 
     api_key = (api_key or "").strip() or None
+
+    if not api_key and not _is_loopback_host(host):
+        if not allow_unauthenticated:
+            print(
+                f"error: refusing to bind {host or '0.0.0.0'} with no api-key: the graph "
+                "would be served unauthenticated on the network. Set --api-key (or "
+                "GRAPHIFY_API_KEY), bind 127.0.0.1, or pass --allow-unauthenticated "
+                "to accept the exposure explicitly.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        print(
+            f"WARNING: binding {host or '0.0.0.0'} with no api-key (--allow-unauthenticated) "
+            "exposes the graph unauthenticated on the network.",
+            file=sys.stderr,
+        )
 
     app = _build_http_app(
         graph_path,
@@ -3443,12 +3481,6 @@ def serve_http(
         f"graphify MCP server (streamable-http) on http://{host}:{port}{path} - {auth_note}",
         file=sys.stderr,
     )
-    if host in ("0.0.0.0", "::", "") and not api_key:
-        print(
-            f"WARNING: binding {host or '0.0.0.0'} with no api-key exposes the graph "
-            "unauthenticated on the network. Set --api-key (or GRAPHIFY_API_KEY).",
-            file=sys.stderr,
-        )
     uvicorn.run(app, host=host, port=port)
 
 
@@ -3486,6 +3518,11 @@ def _main(argv: list[str] | None = None) -> None:
         default=os.environ.get("GRAPHIFY_API_KEY"),
         help="Require this key on the HTTP transport (env: GRAPHIFY_API_KEY)",
     )
+    parser.add_argument(
+        "--allow-unauthenticated",
+        action="store_true",
+        help="Explicitly allow a non-loopback --host with no --api-key (exposes the graph on the network)",
+    )
     parser.add_argument("--path", default="/mcp", help="HTTP mount path (default: /mcp)")
     parser.add_argument(
         "--json-response",
@@ -3516,6 +3553,7 @@ def _main(argv: list[str] | None = None) -> None:
             json_response=args.json_response,
             stateless=args.stateless,
             session_timeout=args.session_timeout,
+            allow_unauthenticated=args.allow_unauthenticated,
         )
     else:
         serve(graph_path)

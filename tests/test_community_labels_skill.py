@@ -97,7 +97,7 @@ def test_skill_step5_reexports_graph_json_with_curated_labels(path: Path):
     """
     text = path.read_text(encoding="utf-8")
     post_labels_blocks = [
-        b for b in _code_blocks(text) if "labels = LABELS_DICT" in b
+        b for b in _code_blocks(text) if "Path('graphify-out/.graphify_labels.json').read_text" in b
     ]
     assert post_labels_blocks, f"{path.name}: no Step-5 (LABELS_DICT) code block found"
     for block in post_labels_blocks:
@@ -121,7 +121,7 @@ def test_core_fragments_step5_reexport_with_curated_labels(fragment: Path):
     """Same lint at the source of truth: the core fragments skillgen renders from."""
     text = fragment.read_text(encoding="utf-8")
     post_labels_blocks = [
-        b for b in _code_blocks(text) if "labels = LABELS_DICT" in b
+        b for b in _code_blocks(text) if "Path('graphify-out/.graphify_labels.json').read_text" in b
     ]
     assert post_labels_blocks, f"{fragment.name}: no Step-5 (LABELS_DICT) code block found"
     for block in post_labels_blocks:

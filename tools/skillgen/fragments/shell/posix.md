@@ -2,10 +2,11 @@
 # Detect the correct Python interpreter (handles uv tool, pipx, venv, system installs)
 PYTHON=""
 GRAPHIFY_BIN=$(which graphify 2>/dev/null)
-# 1. uv tool installs — most reliable on modern Mac/Linux
+# 1. uv tool installs — look in the tool dir; never `uv tool run --from graphifyy`,
+#    which fetches the package from PyPI when it is not installed.
 if [ -z "$PYTHON" ] && command -v uv >/dev/null 2>&1; then
-    _UV_PY=$(uv tool run --from graphifyy python -c "import sys; print(sys.executable)" 2>/dev/null)
-    if [ -n "$_UV_PY" ]; then PYTHON="$_UV_PY"; fi
+    _UV_DIR=$(uv tool dir 2>/dev/null)
+    if [ -n "$_UV_DIR" ] && [ -x "$_UV_DIR/graphifyy/bin/python" ]; then PYTHON="$_UV_DIR/graphifyy/bin/python"; fi
 fi
 # 2. Read shebang from graphify binary (pipx and direct pip installs)
 if [ -z "$PYTHON" ] && [ -n "$GRAPHIFY_BIN" ]; then
@@ -18,18 +19,21 @@ fi
 # 3. Fall back to python3
 if [ -z "$PYTHON" ]; then PYTHON="python3"; fi
 if ! "$PYTHON" -c "import graphify" 2>/dev/null; then
-    if command -v uv >/dev/null 2>&1; then
-        uv tool install --upgrade graphifyy -q 2>&1 | tail -3
-        _UV_PY=$(uv tool run --from graphifyy python -c "import sys; print(sys.executable)" 2>/dev/null)
-        if [ -n "$_UV_PY" ]; then PYTHON="$_UV_PY"; fi
-    else
-        "$PYTHON" -m pip install graphifyy -q 2>/dev/null \
-          || "$PYTHON" -m pip install graphifyy -q --break-system-packages 2>&1 | tail -3
-    fi
+    # Not installed. Never install from here: an unpinned upgrade or a pip install
+    # into the system site-packages pulls whatever PyPI serves today into the
+    # user's environment. Stop and hand the user the pinned command instead.
+    echo "graphify is not installed: 'graphify --version' is unavailable and '$PYTHON' cannot import graphify." >&2
+    echo "Install the pinned release, then re-run /graphify:" >&2
+    echo "    uv tool install \"graphifyy==@@PINNED_VERSION@@\"" >&2
+    echo "  (without uv: python3 -m pip install \"graphifyy==@@PINNED_VERSION@@\")" >&2
+    exit 1
 fi
 # Write interpreter path for all subsequent steps (persists across invocations)
 mkdir -p graphify-out
 "$PYTHON" -c "import sys; open('graphify-out/.graphify_python', 'w', encoding='utf-8').write(sys.executable)"
+# Later steps refuse anything but an absolute plain path; say so now instead of looping on "re-run Step 1".
+_SAVED_PYTHON=""; read -r _SAVED_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$_SAVED_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) _SAVED_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) _SAVED_PYTHON="";; esac; [ -n "$_SAVED_PYTHON" ] || { echo "graphify's interpreter path (sys.executable) is not an absolute plain path (letters, digits, space and _./+@:- only), so every later step would refuse it and re-running Step 1 would not help: install graphify under such a path (uv tool install does) and re-run Step 1" >&2; exit 1; }
 # Save scan root so `graphify update` (no args) knows where to look next time.
 # The scan path is passed through a quoted heredoc, never substituted into the
 # command line itself: a bare `cd <path>` (or an unquoted heredoc, which
@@ -40,6 +44,6 @@ INPUT_PATH
 GRAPHIFY_ROOT_EOF
 ```
 
-If the import succeeds, print nothing and move straight to Step 2.
+If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or the pip flag that overrides the system site-packages protection.
 
-**In every subsequent bash block, replace `python3` with `$(cat graphify-out/.graphify_python)` to use the correct interpreter.**
+**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is an absolute plain path (`A-Za-z0-9_./+@:\-` and spaces only; a relative path such as a committed `./tools/py` or `C:tools/py`, a `..` or `.` segment, a doubled leading slash, and a `/proc`, `/dev` or `/sys` path are refused), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c "..."` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.

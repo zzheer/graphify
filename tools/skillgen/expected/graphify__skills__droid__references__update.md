@@ -6,8 +6,12 @@ Load this only when the user passed `--update` or `--cluster-only`. A first-time
 
 Use when you've added or modified files since the last run. Only re-extracts changed files - saves tokens and time.
 
+If the user gave an explicit path, run Step 1 first: it records that path in `graphify-out/.graphify_root` through a quoted heredoc. `INPUT_PATH` below is that same user-given path; it is substituted only inside the quoted heredoc (never on a command line), so the shell never evaluates it.
+
 ```bash
-$(cat graphify-out/.graphify_python) -c "
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+"$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from graphify.detect import detect_incremental, save_manifest
 from pathlib import Path
@@ -30,7 +34,7 @@ print(json.dumps({
     'skipped_sensitive': result.get('skipped_sensitive', []),
 }, indent=2, ensure_ascii=False))
 print('Full result: graphify-out/.graphify_incremental.json')
-Path('graphify-out/.graphify_incremental.json').write_text(json.dumps(result, ensure_ascii=False), encoding=\"utf-8\")
+Path('graphify-out/.graphify_incremental.json').write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 deleted = list(result.get('deleted_files', []))
 if new_total == 0 and not deleted:
     print('No files changed since last run. Nothing to update.')
@@ -39,16 +43,18 @@ if deleted:
     print(f'{len(deleted)} deleted file(s) to prune.')
 if new_total > 0:
     print(f'{new_total} new/changed file(s) to re-extract.')
-"
+PY
 ```
 
 Then populate `.graphify_detect.json` so Steps 3A–6 (which read it unconditionally) see the right state for an incremental run. `files` carries the changed subset (drives Step 3A AST + Step 3B0 cache check on only what changed); `all_files` carries the full corpus for any step that needs corpus-wide context:
 
 ```bash
-$(cat graphify-out/.graphify_python) -c "
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+"$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
-r = json.loads(Path('graphify-out/.graphify_incremental.json').read_text(encoding=\"utf-8\"))
+r = json.loads(Path('graphify-out/.graphify_incremental.json').read_text(encoding="utf-8"))
 Path('graphify-out/.graphify_detect.json').write_text(json.dumps({
     'files': r.get('new_files', {}),
     'all_files': r.get('files', {}),
@@ -56,14 +62,16 @@ Path('graphify-out/.graphify_detect.json').write_text(json.dumps({
     'total_words': r.get('total_words', 0),
     'skipped_sensitive': r.get('skipped_sensitive', []),
     'needs_graph': True,
-}, ensure_ascii=False), encoding=\"utf-8\")
-"
+}, ensure_ascii=False), encoding="utf-8")
+PY
 ```
 
 If new files exist, first check whether all changed files are code files:
 
 ```bash
-$(cat graphify-out/.graphify_python) -c "
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+"$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
 
@@ -73,7 +81,7 @@ new_files = result.get('new_files', {})
 all_changed = [f for files in new_files.values() for f in files]
 code_only = all(Path(f).suffix.lower() in code_exts for f in all_changed)
 print('code_only:', code_only)
-"
+PY
 ```
 
 If `code_only` is True: print `[graphify update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run Step 3A (AST) on the changed files, then follow only Part B's **Fast path** to overwrite `.graphify_semantic.json` with an empty result and run Part C to create `.graphify_extract.json` from the fresh AST result. Skip semantic cache checks/writes and subagents (Steps B0–B3); do not reuse semantic sidecars from a prior run. Continue to the incremental merge and Steps 4–8 only after Part C has completed.
@@ -86,11 +94,13 @@ If no new files exist (only deletions), create an empty extraction so the merge 
 ```bash
 if [ ! -f graphify-out/.graphify_extract.json ]; then
     echo '[graphify update] Only deletions -- creating empty extraction for merge.'
-    $(cat graphify-out/.graphify_python) -c "
+    GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+    case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+    "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
 Path('graphify-out/.graphify_extract.json').write_text(json.dumps({'nodes':[],'edges':[],'hyperedges':[],'input_tokens':0,'output_tokens':0}), encoding='utf-8')
-"
+PY
 fi
 ```
 
@@ -98,15 +108,17 @@ fi
 Then:
 
 ```bash
-$(cat graphify-out/.graphify_python) -c "
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+"$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
 from graphify.build import build_merge
 from graphify.detect import save_manifest
 
 # Load new extraction and incremental state
-new_extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text(encoding=\"utf-8\"))
-incremental = json.loads(Path('graphify-out/.graphify_incremental.json').read_text(encoding=\"utf-8\"))
+new_extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text(encoding="utf-8"))
+incremental = json.loads(Path('graphify-out/.graphify_incremental.json').read_text(encoding="utf-8"))
 deleted = list(incremental.get('deleted_files', []))
 # prune_sources is ONLY for genuinely DELETED files. Changed/re-extracted files are
 # handled by build_merge's replace-on-re-extract (#1344): every source_file in
@@ -149,8 +161,8 @@ merged_out = {
     'input_tokens': new_extraction.get('input_tokens', 0),
     'output_tokens': new_extraction.get('output_tokens', 0),
 }
-Path('graphify-out/.graphify_extract.json').write_text(json.dumps(merged_out, ensure_ascii=False), encoding=\"utf-8\")
-print(f'[graphify update] Merged extraction written ({len(merged_out[\"nodes\"])} nodes, {len(merged_out[\"edges\"])} edges)')
+Path('graphify-out/.graphify_extract.json').write_text(json.dumps(merged_out, ensure_ascii=False), encoding="utf-8")
+print(f'[graphify update] Merged extraction written ({len(merged_out["nodes"])} nodes, {len(merged_out["edges"])} edges)')
 
 # Save manifest so next --update diffs against today's state, not the
 # prior run's baseline (prevents ghost-node reports on subsequent updates).
@@ -183,7 +195,7 @@ _cleared = _dispatched - _stamped
 _scan = {f for fl in incremental['files'].values() for f in fl}
 save_manifest(_manifest_files, root='INPUT_PATH', scan_corpus=_scan, clear_semantic=_cleared or None)
 print('[graphify update] Manifest saved.')
-"
+PY
 ```
 
 Then run Steps 4–8 on the merged graph as normal.
@@ -191,7 +203,9 @@ Then run Steps 4–8 on the merged graph as normal.
 After Step 4, show the graph diff:
 
 ```bash
-$(cat graphify-out/.graphify_python) -c "
+GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|//*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+"$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from graphify.analyze import graph_diff
 from graphify.build import build_from_json
@@ -200,8 +214,8 @@ import networkx as nx
 from pathlib import Path
 
 # Load old graph (before update) from backup written before merge
-old_data = json.loads(Path('graphify-out/.graphify_old.json').read_text(encoding=\"utf-8\")) if Path('graphify-out/.graphify_old.json').exists() else None
-new_extract = json.loads(Path('graphify-out/.graphify_extract.json').read_text(encoding=\"utf-8\"))
+old_data = json.loads(Path('graphify-out/.graphify_old.json').read_text(encoding="utf-8")) if Path('graphify-out/.graphify_old.json').exists() else None
+new_extract = json.loads(Path('graphify-out/.graphify_extract.json').read_text(encoding="utf-8"))
 G_new = build_from_json(new_extract, directed=IS_DIRECTED)
 
 if old_data:
@@ -212,7 +226,7 @@ if old_data:
         print('New nodes:', ', '.join(n['label'] for n in diff['new_nodes'][:5]))
     if diff['new_edges']:
         print('New edges:', len(diff['new_edges']))
-"
+PY
 ```
 
 Before the merge step, save the old graph: `cp graphify-out/graph.json graphify-out/.graphify_old.json`

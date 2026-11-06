@@ -29,9 +29,9 @@ def _artifact(artifact_path: str) -> str:
 def _python_blocks(section: str) -> list[str]:
     sources = []
     for block in re.findall(r"```bash\n(.*?)```", section, re.S):
-        match = re.search(r' -c "\n(.*)\n"\s*$', block, re.S)
+        match = re.search(r" - <<'PY'\n(.*)\nPY\s*$", block, re.S)
         if match:
-            sources.append(match.group(1).replace('\\"', '"'))
+            sources.append(match.group(1))
     return sources
 
 

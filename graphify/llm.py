@@ -654,6 +654,83 @@ def _wrap_untrusted(rel: str, content: str) -> str:
     )
 
 
+# Files whose raw text must never be shipped to a remote LLM backend (#2781).
+# Deployment/config formats routinely embed live credentials (CI secrets in a
+# workflow .yml, a docker-compose with passwords, a tfvars file) and the
+# structural extractors already cover them without a model, so they are
+# excluded from the semantic (LLM) prompt by default. ``detect._is_sensitive``
+# covers the credential-store names (.env*, *.pem/.key/.p12/.pfx, id_rsa*,
+# *secrets*, *credentials*, ...); the checks below are a second, independent
+# gate at the one place where file text is actually put into a prompt.
+_LLM_EXCLUDED_SUFFIXES = frozenset({".yml", ".yaml", ".tfvars", ".pem", ".key", ".p12", ".pfx"})
+_LLM_EXCLUDED_STORE_RE = re.compile(
+    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)", re.IGNORECASE
+)
+# A bare "secret(s)"/"credential(s)" word in the name. A prose note whose stem
+# is a multi-word topic slug (managing-secrets-in-ci.md, credential-rotation-
+# runbook.md) is a document *about* the subject, which detect keeps in the
+# graph (#2106); for those ``detect._is_sensitive`` decides, so SECRETS.md and
+# my_secret.txt stay out while the topic slugs reach the prompt.
+_LLM_EXCLUDED_WORD_RE = re.compile(r"(?<![A-Za-z])(secrets?|credentials?)(?![A-Za-z])", re.IGNORECASE)
+_LLM_INCLUDE_SENSITIVE_ENV = "GRAPHIFY_LLM_INCLUDE_SENSITIVE"
+
+
+def _llm_excluded_reason(path: Path) -> str | None:
+    """Why ``path``'s raw text must not be sent to an LLM backend, or None.
+
+    Opt out (send everything) with ``GRAPHIFY_LLM_INCLUDE_SENSITIVE=1``.
+    """
+    if os.environ.get(_LLM_INCLUDE_SENSITIVE_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return None
+    name = path.name
+    if path.suffix.lower() in _LLM_EXCLUDED_SUFFIXES:
+        return f"{path.suffix.lower()} files are not sent to LLM backends"
+    if _LLM_EXCLUDED_STORE_RE.search(name):
+        return "credential-like file name"
+    prose_note = False
+    try:
+        from graphify.detect import _is_prose_note, _is_sensitive
+        prose_note = _is_prose_note(path)
+        if _is_sensitive(path):
+            return "sensitive file"
+    except Exception:  # noqa: BLE001 - the name/suffix checks above still apply
+        pass
+    if not prose_note and _LLM_EXCLUDED_WORD_RE.search(name):
+        return "credential-like file name"
+    return None
+
+
+_llm_excluded_warned: set[str] = set()
+# Bounded like _PDF_ESTIMATE_CACHE: a long-lived process (serve, repeated
+# extractions) must not accumulate one entry per excluded path forever. Clearing
+# only re-emits a warning line for a path seen before the clear.
+_LLM_EXCLUDED_WARNED_MAX = 4096
+
+
+def _skip_llm_excluded(p: Path, rel: str, resolved: Path | None = None) -> bool:
+    """Log once per path and return True when ``p`` must stay out of the prompt.
+
+    ``resolved`` is the symlink-resolved target (from ``_resolve_under_root``):
+    an innocuous alias such as ``docs/deployment.md -> config/prod.yaml`` is
+    judged by both names, since the bytes read come from the target.
+    """
+    reason = _llm_excluded_reason(p)
+    if reason is None and resolved is not None and resolved != p:
+        reason = _llm_excluded_reason(resolved)
+    if reason is None:
+        return False
+    if rel not in _llm_excluded_warned:
+        if len(_llm_excluded_warned) >= _LLM_EXCLUDED_WARNED_MAX:
+            _llm_excluded_warned.clear()
+        _llm_excluded_warned.add(rel)
+        print(
+            f"[graphify] not sending {rel} to the LLM backend ({reason}; "
+            f"set {_LLM_INCLUDE_SENSITIVE_ENV}=1 to override)",
+            file=sys.stderr,
+        )
+    return True
+
+
 def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
     """Return file/slice contents formatted for the extraction prompt.
 
@@ -680,6 +757,8 @@ def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
             rel = p.relative_to(root).as_posix()
         except ValueError:
             rel = Path(p).as_posix()
+        if _skip_llm_excluded(p, rel, safe_path):
+            continue
         try:
             if isinstance(u, FileSlice):
                 content = read_slice_text(u)
@@ -746,7 +825,7 @@ def _dispatched_source_text(units: "list[Path | FileSlice]", root: Path) -> dict
     for u in units:
         p = unit_path(u)
         safe = _resolve_under_root(p, root)
-        if safe is None:
+        if safe is None or _llm_excluded_reason(p) is not None or _llm_excluded_reason(safe) is not None:
             continue
         try:
             content = read_slice_text(u) if isinstance(u, FileSlice) else _file_to_text(safe)
@@ -933,6 +1012,8 @@ def _build_image_refs(image_files: list[Path], root: Path, *, read_bytes: bool =
             rel = p.relative_to(root).as_posix()
         except ValueError:
             rel = Path(p).as_posix()
+        if _skip_llm_excluded(p, rel, abs_path):
+            continue
         media = _IMAGE_MEDIA_TYPES.get(p.suffix.lower(), "image/png")
         raw: bytes | None = None
         if read_bytes:
@@ -2147,6 +2228,12 @@ def extract_files_direct(
     untouched — Path(FileSlice) would raise (#1397/#1399).
     """
     files = [f if isinstance(f, (Path, FileSlice)) else Path(f) for f in files]
+    if _no_llm_forced():
+        # Hard kill switch (#2781): wins even over an explicit backend= argument,
+        # so no corpus text can leave the machine while it is set.
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to run semantic extraction."
+        )
     if backend is None:
         if backend_disabled_by_env():
             raise ValueError(
@@ -2197,6 +2284,11 @@ def extract_files_direct(
     image_refs = _build_image_refs(image_files, root, read_bytes=read_bytes) if image_files else []
     if image_refs and not vision:
         image_refs = _strip_pixels(image_refs)
+    if not user_msg.strip() and not image_refs:
+        # Every unit of this chunk was excluded (credential-like names, config
+        # formats, symlinks out of root): there is nothing to extract from, so do
+        # not spend a request on an empty prompt the model could only hallucinate on.
+        return {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0, "model": mdl, "finish_reason": "stop"}
     max_out = _resolve_max_tokens(cfg.get("max_tokens", 8192))
 
     if backend == "claude":
@@ -3186,6 +3278,13 @@ def _call_llm(
     exist in this module, so the LLM tiebreaker silently no-op'd on
     `ImportError` (F-038). Adding the function here re-enables it.
     """
+    if _no_llm_forced():
+        # Hard kill switch (#2781): every provider call funnels through here
+        # (dedup tiebreaker, community labeling), so an explicit backend= cannot
+        # route around the guard in extract_files_direct.
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to use an LLM backend."
+        )
     if backend not in BACKENDS:
         raise ValueError(f"Unknown backend {backend!r}")
     ollama_seed = _resolve_ollama_seed() if backend == "ollama" else None
@@ -3467,6 +3566,9 @@ _BACKEND_DETECTION_EXTRA_ENV = (
     "OLLAMA_BASE_URL", "OLLAMA_HOST",
     # The explicit selector/disable switch, read by _graphify_backend_setting().
     "GRAPHIFY_BACKEND",
+    # The hard kill switch (#2781), read by _no_llm_forced(); listed so the test
+    # suite's env isolation clears it like every other detection input.
+    "GRAPHIFY_NO_LLM",
 )
 
 
@@ -3487,6 +3589,16 @@ def backend_detection_env_vars() -> tuple[str, ...]:
 
 # Values of GRAPHIFY_BACKEND that mean "do not use any LLM backend".
 _BACKEND_DISABLE_SENTINELS = frozenset({"none", "off", "disable", "disabled"})
+_NO_LLM_ENV = "GRAPHIFY_NO_LLM"
+
+
+def _no_llm_forced() -> bool:
+    """True when ``GRAPHIFY_NO_LLM=1`` forces the no-backend path (#2781).
+
+    A hard kill switch for environments where no corpus text may leave the
+    machine: it wins over ``GRAPHIFY_BACKEND`` and every ambient API key.
+    """
+    return os.environ.get(_NO_LLM_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _graphify_backend_setting() -> str | None:
@@ -3507,6 +3619,8 @@ def backend_disabled_by_env() -> bool:
     "no provider was found", so it can skip the LLM step with the right message
     instead of reporting a missing key (#4361).
     """
+    if _no_llm_forced():
+        return True
     value = _graphify_backend_setting()
     return value is not None and value.lower() in _BACKEND_DISABLE_SENTINELS
 
@@ -3537,6 +3651,8 @@ def detect_backend_with_source() -> "tuple[str | None, str]":
     key now keeps you on the paid backend; remove the paid key (or pass
     --backend ollama explicitly) to route to the local model.
     """
+    if _no_llm_forced():
+        return None, f"{_NO_LLM_ENV}={os.environ.get(_NO_LLM_ENV, '').strip()}"
     setting = _graphify_backend_setting()
     if setting is not None:
         if setting.lower() in _BACKEND_DISABLE_SENTINELS:
@@ -3819,6 +3935,13 @@ def label_communities(
     written. Callers that want graceful degradation should use
     :func:`generate_community_labels`.
     """
+    if _no_llm_forced():
+        # Hard kill switch (#2781): refuse before any community text is batched
+        # into a prompt, even with an explicit backend= (mirrors
+        # extract_files_direct; _call_llm enforces it again underneath).
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to label communities."
+        )
     labels = _placeholder_community_labels(communities)
     cap = len(communities) if max_communities is None else max_communities
     lines, labeled_cids = _community_label_lines(G, communities, gods, cap, top_k)
@@ -3916,10 +4039,10 @@ def generate_community_labels(
     ``GRAPHIFY_BACKEND=none`` disables the whole step, including the ``claude
     -p`` fallback below, so a user can keep LLM work off no matter what is on
     PATH (#4361)."""
-    if backend is None and backend_disabled_by_env():
+    if (backend is None and backend_disabled_by_env()) or _no_llm_forced():
         if not quiet:
             print(
-                "[graphify label] LLM backends disabled by GRAPHIFY_BACKEND=none; "
+                "[graphify label] LLM backends disabled by GRAPHIFY_BACKEND=none / GRAPHIFY_NO_LLM=1; "
                 "keeping Community N placeholders.",
                 file=sys.stderr,
             )

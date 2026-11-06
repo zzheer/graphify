@@ -615,8 +615,23 @@ _TRIAGE_MODEL_DEFAULTS: dict[str, str] = {
 
 
 def _resolve_triage_backend() -> tuple[str, str]:
-    """Return (backend, model) using GRAPHIFY_TRIAGE_BACKEND or first available key."""
-    from graphify.llm import BACKENDS, _get_backend_api_key, _default_model_for_backend
+    """Return (backend, model) using GRAPHIFY_TRIAGE_BACKEND or first available key.
+
+    Raises ``ValueError`` when ``GRAPHIFY_NO_LLM=1`` or ``GRAPHIFY_BACKEND=none``
+    is set: triage sends PR titles and authors to a provider, so it is covered by
+    the same kill switch as extraction (#2781, #4361).
+    """
+    from graphify.llm import (
+        BACKENDS,
+        _default_model_for_backend,
+        _get_backend_api_key,
+        backend_disabled_by_env,
+    )
+
+    if backend_disabled_by_env():
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1 / GRAPHIFY_BACKEND=none; not running triage."
+        )
 
     explicit = os.environ.get("GRAPHIFY_TRIAGE_BACKEND", "").strip()
     if explicit in BACKENDS:
@@ -641,10 +656,16 @@ def _resolve_triage_backend() -> tuple[str, str]:
 
 def triage_with_opus(prs: list[PRInfo], base: str) -> None:
     try:
-        from graphify.llm import BACKENDS, _get_backend_api_key
+        from graphify.llm import BACKENDS, _get_backend_api_key, backend_disabled_by_env
     except ImportError:
         print(red("  graphify.llm not available - cannot run triage."), file=sys.stderr)
         sys.exit(1)
+
+    if backend_disabled_by_env():
+        # Hard kill switch / explicit disable (#2781, #4361): PR titles and
+        # authors are repository data and must not leave the machine either.
+        print(dim("  LLM backends disabled by GRAPHIFY_NO_LLM=1 / GRAPHIFY_BACKEND=none; skipping triage."))
+        return
 
     candidates = [p for p in prs if p.base_branch == base and p.status not in ("WRONG-BASE", "STALE")]
     if not candidates:
