@@ -2284,6 +2284,11 @@ def extract_files_direct(
     image_refs = _build_image_refs(image_files, root, read_bytes=read_bytes) if image_files else []
     if image_refs and not vision:
         image_refs = _strip_pixels(image_refs)
+    if not user_msg.strip() and not image_refs:
+        # Every unit of this chunk was excluded (credential-like names, config
+        # formats, symlinks out of root): there is nothing to extract from, so do
+        # not spend a request on an empty prompt the model could only hallucinate on.
+        return {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0, "model": mdl, "finish_reason": "stop"}
     max_out = _resolve_max_tokens(cfg.get("max_tokens", 8192))
 
     if backend == "claude":

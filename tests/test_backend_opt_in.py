@@ -138,3 +138,27 @@ def test_label_communities_refuses_even_explicit_backend_when_no_llm(monkeypatch
     monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
     with pytest.raises(ValueError, match="GRAPHIFY_NO_LLM=1"):
         llm.label_communities(None, {0: ["a"]}, backend="gemini")
+
+
+def test_pr_triage_refuses_when_no_llm(monkeypatch):
+    from graphify import prs
+
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    monkeypatch.setenv("GRAPHIFY_TRIAGE_BACKEND", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient")
+    with pytest.raises(ValueError, match="GRAPHIFY_NO_LLM=1"):
+        prs._resolve_triage_backend()
+
+
+def test_extract_files_direct_skips_the_call_when_every_unit_is_excluded(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "ambient")
+    secret = tmp_path / "deploy.yml"
+    secret.write_text("password: hunter2\n", encoding="utf-8")
+
+    def _boom(*args, **kwargs):  # pragma: no cover - must not run
+        raise AssertionError("backend was called with an empty prompt")
+
+    monkeypatch.setattr(llm, "_call_gemini", _boom)
+    result = llm.extract_files_direct([secret], backend="gemini", root=tmp_path)
+    assert result["nodes"] == [] and result["edges"] == []
+    assert result["input_tokens"] == 0
