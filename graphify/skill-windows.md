@@ -142,13 +142,13 @@ INPUT_PATH
 
 If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or the pip flag that overrides the system site-packages protection.
 
-**Every later block starts with the same two `$GRAPHIFY_PYTHON` lines.** They read `graphify-out\.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is an absolute plain path (drive-rooted or `/`-rooted; a relative path such as a committed `.\tools\py.exe` is refused), an existing file, and an interpreter that can `import graphify`, and only then run it with the Python passed on stdin through a single-quoted here-string (`@' ... '@ | & $GRAPHIFY_PYTHON -`). Copy the two lines verbatim into every block, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or here-strings.
+**Every later block starts with the same two `$GRAPHIFY_PYTHON` lines.** They read `graphify-out\.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is an absolute plain path (drive-rooted or `/`-rooted; a relative path such as a committed `.\tools\py.exe` and a `..` segment are refused), an existing file, and an interpreter that can `import graphify`, and only then run it with the Python passed on stdin through a single-quoted here-string (`@' ... '@ | & $GRAPHIFY_PYTHON -`). Copy the two lines verbatim into every block, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or here-strings.
 
 ### Step 2 - Detect files
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.detect import detect
@@ -217,7 +217,7 @@ For any code files detected, run AST extraction in parallel with Part B subagent
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.extract import collect_files, extract
@@ -248,7 +248,7 @@ else:
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -272,7 +272,7 @@ SPEC_PATH below is the **absolute** path of the `references/extraction-spec.md` 
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.cache import check_semantic_cache
@@ -351,7 +351,7 @@ A subagent that only read the first Read call's worth of a long file still write
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json, glob
 from pathlib import Path
@@ -388,7 +388,7 @@ Tell the user which files came up short and what was lost (the line counts are p
 Merge all chunk files into `.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json, glob
 from pathlib import Path
@@ -414,7 +414,7 @@ print(f'Merged {len(chunks)} chunks: {total_in:,} in / {total_out:,} out tokens'
 Save new results to cache. Pass the same SPEC_PATH as Step B0 — it stamps each entry with the prompt that produced it, and a write under a different prompt than the read lands where the next run won't look (#1939):
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from graphify.cache import save_semantic_cache
@@ -435,7 +435,7 @@ print(f'Cached {saved} files' + note)
 Merge cached + new results into `graphify-out/.graphify_semantic.json`:
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -470,7 +470,7 @@ Clean up temp files: `Remove-Item -Force -ErrorAction SilentlyContinue graphify-
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from pathlib import Path
@@ -521,7 +521,7 @@ print(f'Merged: {total} nodes, {edges} edges ({len(ast["nodes"])} AST + {len(sem
 ```powershell
 New-Item -ItemType Directory -Force -Path graphify-out | Out-Null
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.build import build_from_json
@@ -585,7 +585,7 @@ A non-destructive diagnostic on the extraction, before labeling. It surfaces edg
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -615,7 +615,7 @@ Then regenerate the report and save the labels for the visualizer:
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import sys, json
 from graphify.build import build_from_json
@@ -688,7 +688,7 @@ These run only when their flag is present (`--wiki`, `--neo4j`/`--neo4j-push`, `
 
 ```powershell
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
+if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) { Write-Error "graphify-out\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }
 @'
 import json
 from pathlib import Path
@@ -805,7 +805,7 @@ Before running any subcommand below (`--update`, `--cluster-only`, `query`, `pat
 # plain path to an existing interpreter that can import graphify.
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue)
 if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-$valid = $GRAPHIFY_PYTHON -and ($GRAPHIFY_PYTHON -match '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$') -and (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)
+$valid = $GRAPHIFY_PYTHON -and ($GRAPHIFY_PYTHON -match '^(?!.*(^|[\\/])\.\.?([\\/]|$))([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$') -and (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)
 if ($valid) { & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; $valid = ($LASTEXITCODE -eq 0) }
 if (-not $valid) {
     $GRAPHIFY_PYTHON = $null

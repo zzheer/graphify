@@ -1413,6 +1413,10 @@ _HOSTILE_INTERPRETER_VALUES = [
     # is in the allowlist.
     "./tools/py",
     "tools/py",
+    # Absolute spellings of the working tree that need no knowledge of the clone path.
+    "/proc/self/cwd/tools/py",
+    "/usr/../proc/self/cwd/tools/py",
+    "/dev/fd/3",
 ]
 
 
@@ -1448,7 +1452,7 @@ def test_every_inline_python_block_resolves_and_validates_the_interpreter():
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bash")
-@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare"])
+@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare", "proc_cwd", "dotdot", "dev_fd"])
 def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     """A committed or tampered graphify-out/.graphify_python must never be executed."""
     import shutil

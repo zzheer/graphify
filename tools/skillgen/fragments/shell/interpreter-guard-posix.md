@@ -2,7 +2,7 @@
 # graphify-out/.graphify_python is repository data: re-resolve it unless it is a
 # plain path to an executable interpreter that can import graphify.
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*|*/../*|*/./*|/proc/*|/dev/*|/sys/*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac
 if [ -z "$GRAPHIFY_PYTHON" ] || [ ! -x "$GRAPHIFY_PYTHON" ] || ! "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null; then
     PYTHON="python3"
     GRAPHIFY_BIN=$(which graphify 2>/dev/null)
