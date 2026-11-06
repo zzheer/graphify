@@ -1,8 +1,14 @@
 # graphify MCP server as a shared HTTP service (issue #1143).
 #
 # Build:  docker build -t graphify .
-# Run:    docker run -p 8080:8080 -v "$(pwd)/graphify-out:/data" graphify \
-#             /data/graph.json --transport http --host 0.0.0.0 --api-key "$SECRET"
+# Run:    docker run -p 8080:8080 -v "$(pwd)/graphify-out:/data" \
+#             -e GRAPHIFY_API_KEY="$SECRET" graphify
+#
+# The default CMD binds 0.0.0.0 (the only way to be reachable from outside the
+# container), and serve refuses a non-loopback bind without an API key (exit 2).
+# Pass the key as GRAPHIFY_API_KEY (or append --api-key "$SECRET" to the
+# command), or append --allow-unauthenticated to accept serving the graph
+# unauthenticated on the container network explicitly.
 #
 # Builds from source so the image includes the Streamable HTTP transport even
 # before it lands on PyPI. The graph.json is mounted at runtime (-v), never
