@@ -1419,6 +1419,8 @@ _HOSTILE_INTERPRETER_VALUES = [
     "/dev/fd/3",
     # Drive-relative: on POSIX this is a plain relative path inside the checkout.
     "C:tools/py",
+    # Doubled leading slash: still /proc on Linux, but not matched by /proc/*.
+    "//proc/self/cwd/tools/py",
 ]
 
 
@@ -1454,7 +1456,7 @@ def test_every_inline_python_block_resolves_and_validates_the_interpreter():
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bash")
-@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare", "proc_cwd", "dotdot", "dev_fd", "drive_relative"])
+@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare", "proc_cwd", "dotdot", "dev_fd", "drive_relative", "double_slash"])
 def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     """A committed or tampered graphify-out/.graphify_python must never be executed."""
     import shutil

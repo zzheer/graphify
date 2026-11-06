@@ -158,7 +158,7 @@ def test_extract_files_direct_skips_the_call_when_every_unit_is_excluded(tmp_pat
     def _boom(*args, **kwargs):  # pragma: no cover - must not run
         raise AssertionError("backend was called with an empty prompt")
 
-    monkeypatch.setattr(llm, "_call_gemini", _boom)
+    monkeypatch.setattr(llm, "_call_openai_compat", _boom)
     result = llm.extract_files_direct([secret], backend="gemini", root=tmp_path)
     assert result["nodes"] == [] and result["edges"] == []
     assert result["input_tokens"] == 0

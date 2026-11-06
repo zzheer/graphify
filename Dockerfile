@@ -7,9 +7,9 @@
 # The default CMD binds 0.0.0.0 (the only way to be reachable from outside the
 # container), and serve refuses a non-loopback bind without an API key (exit 2).
 # Pass the key as GRAPHIFY_API_KEY. Any argument after the image name replaces
-# the whole CMD (ENTRYPOINT + CMD), so to pass flags instead repeat the full
-# list, e.g. to accept serving the graph unauthenticated on the container
-# network explicitly:
+# the whole CMD (ENTRYPOINT, `python -m graphify.serve`, is kept), so to pass
+# flags instead repeat the full list, e.g. to accept serving the graph
+# unauthenticated on the container network explicitly:
 #
 #         docker run -p 8080:8080 -v "$(pwd)/graphify-out:/data" graphify \
 #             /data/graph.json --transport http --host 0.0.0.0 --port 8080 \
