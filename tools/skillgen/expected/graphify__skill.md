@@ -94,9 +94,9 @@ fi
 # 3. Fall back to python3
 if [ -z "$PYTHON" ]; then PYTHON="python3"; fi
 if ! "$PYTHON" -c "import graphify" 2>/dev/null; then
-    # Not installed. Never install from here: an unpinned `uv tool install --upgrade`
-    # or `pip install --break-system-packages` pulls whatever PyPI serves today into
-    # the user's environment. Stop and hand the user the pinned command instead.
+    # Not installed. Never install from here: an unpinned upgrade or a pip install
+    # into the system site-packages pulls whatever PyPI serves today into the
+    # user's environment. Stop and hand the user the pinned command instead.
     echo "graphify is not installed: 'graphify --version' is unavailable and '$PYTHON' cannot import graphify." >&2
     echo "Install the pinned release, then re-run /graphify:" >&2
     echo "    uv tool install \"graphifyy==0.9.102\"" >&2
@@ -116,15 +116,15 @@ INPUT_PATH
 GRAPHIFY_ROOT_EOF
 ```
 
-If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or `--break-system-packages`.
+If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or the pip flag that overrides the system site-packages protection.
 
-**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is a plain path (`A-Za-z0-9_./+@:\-` only), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c "..."` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.
+**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is an absolute plain path (`A-Za-z0-9_./+@:\-` and spaces only; a relative path such as a committed `./tools/py` is refused), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c "..."` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.
 
 ### Step 2 - Detect files
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from graphify.detect import detect
@@ -193,7 +193,7 @@ For any code files detected, run AST extraction in parallel with Part B subagent
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from graphify.extract import collect_files, extract
@@ -224,7 +224,7 @@ PY
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
@@ -248,7 +248,7 @@ SPEC_PATH below is the **absolute** path of the `references/extraction-spec.md` 
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from graphify.cache import check_semantic_cache
@@ -327,7 +327,7 @@ A subagent that only read the first Read call's worth of a long file still write
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, glob
 from pathlib import Path
@@ -364,7 +364,7 @@ Tell the user which files came up short and what was lost (the line counts are p
 Merge all chunk files into `.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, glob
 from pathlib import Path
@@ -390,7 +390,7 @@ PY
 Save new results to cache. Pass the same SPEC_PATH as Step B0 — it stamps each entry with the prompt that produced it, and a write under a different prompt than the read lands where the next run won't look (#1939):
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from graphify.cache import save_semantic_cache
@@ -411,7 +411,7 @@ PY
 Merge cached + new results into `graphify-out/.graphify_semantic.json`:
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
@@ -446,7 +446,7 @@ Clean up temp files: `rm -f graphify-out/.graphify_cached.json graphify-out/.gra
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from pathlib import Path
@@ -497,7 +497,7 @@ PY
 ```bash
 mkdir -p graphify-out
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from graphify.build import build_from_json
@@ -561,7 +561,7 @@ A non-destructive diagnostic on the extraction, before labeling. It surfaces edg
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
@@ -591,7 +591,7 @@ Then regenerate the report and save the labels for the visualizer:
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import sys, json
 from graphify.build import build_from_json
@@ -664,7 +664,7 @@ These run only when their flag is present (`--wiki`, `--neo4j`/`--neo4j-push`, `
 
 ```bash
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json
 from pathlib import Path
@@ -780,7 +780,7 @@ Before running any subcommand below (`--update`, `--cluster-only`, `query`, `pat
 # graphify-out/.graphify_python is repository data: re-resolve it unless it is a
 # plain path to an executable interpreter that can import graphify.
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac
 if [ -z "$GRAPHIFY_PYTHON" ] || [ ! -x "$GRAPHIFY_PYTHON" ] || ! "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null; then
     PYTHON="python3"
     GRAPHIFY_BIN=$(which graphify 2>/dev/null)

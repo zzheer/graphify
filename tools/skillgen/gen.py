@@ -451,14 +451,14 @@ def _render_frontmatter(platform: Platform) -> str:
 # graphify, and the opener runs it quoted. Nothing from the body or from a
 # substituted placeholder is ever parsed by the shell.
 _PY_RESOLVE_POSIX_1 = '''GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true'''
-_PY_RESOLVE_POSIX_2 = '''case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }'''
+_PY_RESOLVE_POSIX_2 = '''case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\ \\\\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }'''
 _PY_INVOKE_POSIX = '"$GRAPHIFY_PYTHON" - <<\'PY\''
 _PY_CLOSE_POSIX = "PY"
 _PY_INVOKE_POSIX_LEGACY = '$(cat graphify-out/.graphify_python) -c "'  # pre-hardening form (v8 baseline)
 _PY_RESOLVE_PS_1 = "$GRAPHIFY_PYTHON = (Get-Content graphify-out\\.graphify_python -Raw -ErrorAction SilentlyContinue); if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }"
 _PY_RESOLVE_PS_2 = (
-    "if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^[A-Za-z0-9_./+@:\\\\ -]+$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) "
-    '{ Write-Error "graphify-out\\.graphify_python is missing or not a plain path to an interpreter: re-run Step 1"; exit 1 }; '
+    "if (-not $GRAPHIFY_PYTHON -or $GRAPHIFY_PYTHON -notmatch '^([A-Za-z]:[\\\\/]|/)[\\p{L}\\p{N}_./+@:\\\\ ()-]*$' -or -not (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)) "
+    '{ Write-Error "graphify-out\\.graphify_python is missing or not an absolute plain path to an interpreter: re-run Step 1"; exit 1 }; '
     '& $GRAPHIFY_PYTHON -c "import graphify" 2>$null; '
     'if ($LASTEXITCODE -ne 0) { Write-Error "$GRAPHIFY_PYTHON cannot import graphify: re-run Step 1"; exit 1 }'
 )
@@ -1488,16 +1488,16 @@ if [ -z "$PYTHON" ] && command -v uv >/dev/null 2>&1; then
     if [ -n "$_UV_DIR" ] && [ -x "$_UV_DIR/graphifyy/bin/python" ]; then PYTHON="$_UV_DIR/graphifyy/bin/python"; fi
 fi
 if ! "$PYTHON" -c "import graphify" 2>/dev/null; then
-    # Not installed. Never install from here: an unpinned `uv tool install --upgrade`
-    # or `pip install --break-system-packages` pulls whatever PyPI serves today into
-    # the user's environment. Stop and hand the user the pinned command instead.
+    # Not installed. Never install from here: an unpinned upgrade or a pip install
+    # into the system site-packages pulls whatever PyPI serves today into the
+    # user's environment. Stop and hand the user the pinned command instead.
     echo "graphify is not installed: 'graphify --version' is unavailable and '$PYTHON' cannot import graphify." >&2
     echo "Install the pinned release, then re-run /graphify:" >&2
     echo "    uv tool install \"graphifyy==@@PINNED_VERSION@@\"" >&2
     echo "  (without uv: python3 -m pip install \"graphifyy==@@PINNED_VERSION@@\")" >&2
     exit 1
 fi
-If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or `--break-system-packages`.
+If the import succeeds, print nothing and move straight to Step 2. If it prints the install message instead, **stop**: show the user that exact pinned command and wait for them to run it. Never run `uv tool install`, `pip install`, or any other install or upgrade command yourself, and never add `--upgrade` or the pip flag that overrides the system site-packages protection.
 """.splitlines()
     if line.strip() and "@@PINNED_VERSION@@" not in line and not line.startswith("if ! ") and line != "fi"
 )
@@ -1564,7 +1564,7 @@ def _canon_interpreter_lines(lines: list[str]) -> list[str]:
 _INTERPRETER_FIX_LINES = frozenset(
     line for line in (
         "**In every subsequent bash block, replace `python3` with `$(cat graphify-out/.graphify_python)` to use the correct interpreter.**",
-        "**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is a plain path (`A-Za-z0-9_./+@:\\-` only), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c \"...\"` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.",
+        "**Every later bash block starts with the same two `GRAPHIFY_PYTHON` lines.** They read `graphify-out/.graphify_python` (a file in the repository, so data, never trusted as-is), reject it unless it is an absolute plain path (`A-Za-z0-9_./+@:\\-` and spaces only; a relative path such as a committed `./tools/py` is refused), an executable file, and an interpreter that can `import graphify`, and only then run it, always quoted, with the Python passed on stdin through a quoted heredoc (`- <<'PY' ... PY`). Copy the two lines verbatim into every block; never expand the file into a command line with `$(cat ...)`, never use `-c \"...\"` with substituted text, and never paste a path, label, answer or any other model- or repository-derived value into a command line: such values reach Python only through files or quoted heredocs. When the `graphify` CLI is on PATH, prefer its subcommands (`graphify query`, `graphify path`, `graphify explain`, `graphify save-result`, `graphify update`) over an inline block that does the same thing.",
         "Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists. If it's missing (e.g. user deleted `graphify-out/`), re-resolve the interpreter first:",
         "Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists and is valid. If it is missing (e.g. user deleted `graphify-out/`), is not a plain executable path, or cannot import graphify, re-resolve the interpreter first:",
     )
@@ -1586,7 +1586,7 @@ fi
 # graphify-out/.graphify_python is repository data: re-resolve it unless it is a
 # plain path to an executable interpreter that can import graphify.
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\\\-]*) GRAPHIFY_PYTHON="";; esac
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\ \\\\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac
 if [ -z "$GRAPHIFY_PYTHON" ] || [ ! -x "$GRAPHIFY_PYTHON" ] || ! "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null; then
     PYTHON="python3"
     GRAPHIFY_BIN=$(which graphify 2>/dev/null)

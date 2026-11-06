@@ -3,7 +3,7 @@
 # plain path to an existing interpreter that can import graphify.
 $GRAPHIFY_PYTHON = (Get-Content graphify-out\.graphify_python -Raw -ErrorAction SilentlyContinue)
 if ($GRAPHIFY_PYTHON) { $GRAPHIFY_PYTHON = $GRAPHIFY_PYTHON.Trim() }
-$valid = $GRAPHIFY_PYTHON -and ($GRAPHIFY_PYTHON -match '^[A-Za-z0-9_./+@:\\ -]+$') -and (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)
+$valid = $GRAPHIFY_PYTHON -and ($GRAPHIFY_PYTHON -match '^([A-Za-z]:[\\/]|/)[\p{L}\p{N}_./+@:\\ ()-]*$') -and (Test-Path -PathType Leaf $GRAPHIFY_PYTHON)
 if ($valid) { & $GRAPHIFY_PYTHON -c "import graphify" 2>$null; $valid = ($LASTEXITCODE -eq 0) }
 if (-not $valid) {
     $GRAPHIFY_PYTHON = $null

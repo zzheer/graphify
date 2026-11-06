@@ -778,11 +778,13 @@ def test_always_on_roundtrip_is_byte_faithful():
         "When the user types `/graphify`, use the installed graphify skill or instructions "
         "before doing anything else."
     )
-    # The registry holds the #1530 substitution plus the query-first and graph-diff rules.
+    # The registry holds the #1530 substitution plus the query-first, graph-diff
+    # and untrusted-data rules.
     assert gen.ALWAYS_ON_SANCTIONED_EDITS["_AGENTS_MD_SECTION"] == (
         (old_instruction, new_instruction),
         gen._QUERY_FIRST_EDIT,
         gen._GRAPH_DIFF_EDIT,
+        gen._UNTRUSTED_EDIT,
     )
     baseline_agents = gen._always_on_constants(gen.ALWAYS_ON_BASELINE_REF)["_AGENTS_MD_SECTION"]
     # The ONLY divergences from the frozen baseline are the sanctioned edits —
@@ -790,7 +792,8 @@ def test_always_on_roundtrip_is_byte_faithful():
     assert old_instruction in baseline_agents
     baseline_agents = baseline_agents.replace(*gen._QUERY_FIRST_EDIT)
     old_rule, new_rule = gen._GRAPH_DIFF_EDIT
-    assert baseline_agents.replace(old_instruction, new_instruction).replace(old_rule, new_rule) == rendered_agents
+    baseline_agents = baseline_agents.replace(old_rule, new_rule).replace(*gen._UNTRUSTED_EDIT)
+    assert baseline_agents.replace(old_instruction, new_instruction) == rendered_agents
     assert "`skill` tool" not in rendered_agents
     assert 'skill: "graphify"' not in rendered_agents
 
@@ -1405,6 +1408,11 @@ _HOSTILE_INTERPRETER_VALUES = [
     "`touch pwned`",
     "/usr/bin/env python3 -c 'print(1)' #",
     "python3 && touch pwned",
+    # A relative path is repository-controlled: a committed graphify-out/.graphify_python
+    # naming a committed executable must never be run, even though every character
+    # is in the allowlist.
+    "./tools/py",
+    "tools/py",
 ]
 
 
@@ -1440,7 +1448,7 @@ def test_every_inline_python_block_resolves_and_validates_the_interpreter():
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bash")
-@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain"])
+@pytest.mark.parametrize("hostile", _HOSTILE_INTERPRETER_VALUES, ids=["semicolon", "cmd_subst", "backticks", "env_args", "and_chain", "relative_dot", "relative_bare"])
 def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     """A committed or tampered graphify-out/.graphify_python must never be executed."""
     import shutil
@@ -1453,6 +1461,11 @@ def test_hostile_graphify_python_file_is_refused(tmp_path: Path, hostile: str):
     stmt = _step_bodies_with_resolve(core)[0]
     (tmp_path / "graphify-out").mkdir()
     (tmp_path / "graphify-out" / ".graphify_python").write_text(hostile, encoding="utf-8")
+    # The committed "interpreter" the relative-path values point at.
+    (tmp_path / "tools").mkdir()
+    planted = tmp_path / "tools" / "py"
+    planted.write_text("#!/bin/sh\ntouch pwned\n", encoding="utf-8")
+    planted.chmod(0o755)
     r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert r.returncode == 1, (r.stdout, r.stderr)
     assert "re-run Step 1" in r.stderr
@@ -1475,3 +1488,30 @@ def test_valid_graphify_python_file_runs_the_heredoc(tmp_path: Path):
     r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "ran True" in r.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash")
+def test_graphify_python_path_with_spaces_runs_the_heredoc(tmp_path: Path):
+    """An interpreter under e.g. `~/Library/Application Support/...` must not strand
+    the skill at Step 2: the variable is always quoted, so a space is a plain
+    path character, not a word break."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not available")
+    spaced = tmp_path / "has space" / "python"
+    spaced.parent.mkdir()
+    try:
+        spaced.symlink_to(sys.executable)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unsupported here")
+    stmt = "\n".join([gen._PY_RESOLVE_POSIX_1, gen._PY_RESOLVE_POSIX_2, gen._PY_INVOKE_POSIX,
+                       "print('ran spaced')", gen._PY_CLOSE_POSIX])
+    (tmp_path / "graphify-out").mkdir()
+    (tmp_path / "graphify-out" / ".graphify_python").write_text(str(spaced), encoding="utf-8")
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT)}
+    r = subprocess.run([bash, "-c", stmt], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ran spaced" in r.stdout

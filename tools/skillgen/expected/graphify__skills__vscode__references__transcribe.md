@@ -19,15 +19,14 @@ Read the top god node labels from detect output or analysis, then compose a shor
 - Labels: `transformer, attention, encoder, decoder` → `"Machine learning research on transformer architectures and attention mechanisms. Use proper punctuation and paragraph breaks."`
 - Labels: `kubernetes, deployment, pod, helm` → `"DevOps discussion about Kubernetes deployments and Helm charts. Use proper punctuation and paragraph breaks."`
 
-**Export** it as `GRAPHIFY_WHISPER_PROMPT` (the exact name the transcriber reads — and it must be `export`ed so the child Python process sees it) for the next command.
+**Write** it to `graphify-out/.graphify_whisper_prompt.txt` with your file-writing tool (one line, no shell quoting). The hint is composed from graph labels, i.e. from analysed file content, so it never goes on a command line or into an `export`: the block below reads the file and passes it as `initial_prompt`.
 
 **Step 2 - Transcribe:**
 
 ```bash
 export GRAPHIFY_WHISPER_MODEL=base  # or whatever --whisper-model the user passed (must be exported)
-export GRAPHIFY_WHISPER_PROMPT="<the one-sentence domain hint you composed in Step 1>"
 GRAPHIFY_PYTHON=""; read -r GRAPHIFY_PYTHON 2>/dev/null < graphify-out/.graphify_python || true
-case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\\-]*) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not a plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
+case "$GRAPHIFY_PYTHON" in ""|*[!A-Za-z0-9_./+@:\ \\-]*) GRAPHIFY_PYTHON="";; /*|[A-Za-z]:*) ;; *) GRAPHIFY_PYTHON="";; esac; [ -n "$GRAPHIFY_PYTHON" ] && [ -x "$GRAPHIFY_PYTHON" ] && "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null || { echo "graphify-out/.graphify_python is missing, not an absolute plain executable path, or cannot import graphify: re-run Step 1" >&2; exit 1; }
 "$GRAPHIFY_PYTHON" - <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -35,7 +34,9 @@ from graphify.transcribe import transcribe_all
 
 detect = json.loads(Path('graphify-out/.graphify_detect.json').read_text(encoding="utf-8"))
 video_files = detect.get('files', {}).get('video', [])
-prompt = os.environ.get('GRAPHIFY_WHISPER_PROMPT', 'Use proper punctuation and paragraph breaks.')
+hint_file = Path('graphify-out/.graphify_whisper_prompt.txt')
+prompt = hint_file.read_text(encoding='utf-8').strip() if hint_file.exists() else ''
+prompt = prompt or os.environ.get('GRAPHIFY_WHISPER_PROMPT', 'Use proper punctuation and paragraph breaks.')
 
 transcript_paths = transcribe_all(video_files, initial_prompt=prompt)
 # Write the JSON from Python (NOT a shell '>' redirect): transcribe_all/Whisper
