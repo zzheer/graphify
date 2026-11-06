@@ -663,10 +663,15 @@ def _wrap_untrusted(rel: str, content: str) -> str:
 # *secrets*, *credentials*, ...); the checks below are a second, independent
 # gate at the one place where file text is actually put into a prompt.
 _LLM_EXCLUDED_SUFFIXES = frozenset({".yml", ".yaml", ".tfvars", ".pem", ".key", ".p12", ".pfx"})
-_LLM_EXCLUDED_NAME_RE = re.compile(
-    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)|(?<![A-Za-z])(secrets?|credentials?)(?![A-Za-z])",
-    re.IGNORECASE,
+_LLM_EXCLUDED_STORE_RE = re.compile(
+    r"^\.env(\.|$)|^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.|$)", re.IGNORECASE
 )
+# A bare "secret(s)"/"credential(s)" word in the name. A prose note whose stem
+# is a multi-word topic slug (managing-secrets-in-ci.md, credential-rotation-
+# runbook.md) is a document *about* the subject, which detect keeps in the
+# graph (#2106); for those ``detect._is_sensitive`` decides, so SECRETS.md and
+# my_secret.txt stay out while the topic slugs reach the prompt.
+_LLM_EXCLUDED_WORD_RE = re.compile(r"(?<![A-Za-z])(secrets?|credentials?)(?![A-Za-z])", re.IGNORECASE)
 _LLM_INCLUDE_SENSITIVE_ENV = "GRAPHIFY_LLM_INCLUDE_SENSITIVE"
 
 
@@ -680,26 +685,43 @@ def _llm_excluded_reason(path: Path) -> str | None:
     name = path.name
     if path.suffix.lower() in _LLM_EXCLUDED_SUFFIXES:
         return f"{path.suffix.lower()} files are not sent to LLM backends"
-    if _LLM_EXCLUDED_NAME_RE.search(name):
+    if _LLM_EXCLUDED_STORE_RE.search(name):
         return "credential-like file name"
+    prose_note = False
     try:
-        from graphify.detect import _is_sensitive
+        from graphify.detect import _is_prose_note, _is_sensitive
+        prose_note = _is_prose_note(path)
         if _is_sensitive(path):
             return "sensitive file"
     except Exception:  # noqa: BLE001 - the name/suffix checks above still apply
         pass
+    if not prose_note and _LLM_EXCLUDED_WORD_RE.search(name):
+        return "credential-like file name"
     return None
 
 
 _llm_excluded_warned: set[str] = set()
+# Bounded like _PDF_ESTIMATE_CACHE: a long-lived process (serve, repeated
+# extractions) must not accumulate one entry per excluded path forever. Clearing
+# only re-emits a warning line for a path seen before the clear.
+_LLM_EXCLUDED_WARNED_MAX = 4096
 
 
-def _skip_llm_excluded(p: Path, rel: str) -> bool:
-    """Log once per path and return True when ``p`` must stay out of the prompt."""
+def _skip_llm_excluded(p: Path, rel: str, resolved: Path | None = None) -> bool:
+    """Log once per path and return True when ``p`` must stay out of the prompt.
+
+    ``resolved`` is the symlink-resolved target (from ``_resolve_under_root``):
+    an innocuous alias such as ``docs/deployment.md -> config/prod.yaml`` is
+    judged by both names, since the bytes read come from the target.
+    """
     reason = _llm_excluded_reason(p)
+    if reason is None and resolved is not None and resolved != p:
+        reason = _llm_excluded_reason(resolved)
     if reason is None:
         return False
     if rel not in _llm_excluded_warned:
+        if len(_llm_excluded_warned) >= _LLM_EXCLUDED_WARNED_MAX:
+            _llm_excluded_warned.clear()
         _llm_excluded_warned.add(rel)
         print(
             f"[graphify] not sending {rel} to the LLM backend ({reason}; "
@@ -735,7 +757,7 @@ def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
             rel = p.relative_to(root).as_posix()
         except ValueError:
             rel = Path(p).as_posix()
-        if _skip_llm_excluded(p, rel):
+        if _skip_llm_excluded(p, rel, safe_path):
             continue
         try:
             if isinstance(u, FileSlice):
@@ -803,7 +825,7 @@ def _dispatched_source_text(units: "list[Path | FileSlice]", root: Path) -> dict
     for u in units:
         p = unit_path(u)
         safe = _resolve_under_root(p, root)
-        if safe is None or _llm_excluded_reason(p) is not None:
+        if safe is None or _llm_excluded_reason(p) is not None or _llm_excluded_reason(safe) is not None:
             continue
         try:
             content = read_slice_text(u) if isinstance(u, FileSlice) else _file_to_text(safe)
@@ -990,6 +1012,8 @@ def _build_image_refs(image_files: list[Path], root: Path, *, read_bytes: bool =
             rel = p.relative_to(root).as_posix()
         except ValueError:
             rel = Path(p).as_posix()
+        if _skip_llm_excluded(p, rel, abs_path):
+            continue
         media = _IMAGE_MEDIA_TYPES.get(p.suffix.lower(), "image/png")
         raw: bytes | None = None
         if read_bytes:
@@ -3249,6 +3273,13 @@ def _call_llm(
     exist in this module, so the LLM tiebreaker silently no-op'd on
     `ImportError` (F-038). Adding the function here re-enables it.
     """
+    if _no_llm_forced():
+        # Hard kill switch (#2781): every provider call funnels through here
+        # (dedup tiebreaker, community labeling), so an explicit backend= cannot
+        # route around the guard in extract_files_direct.
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to use an LLM backend."
+        )
     if backend not in BACKENDS:
         raise ValueError(f"Unknown backend {backend!r}")
     ollama_seed = _resolve_ollama_seed() if backend == "ollama" else None
@@ -3899,6 +3930,13 @@ def label_communities(
     written. Callers that want graceful degradation should use
     :func:`generate_community_labels`.
     """
+    if _no_llm_forced():
+        # Hard kill switch (#2781): refuse before any community text is batched
+        # into a prompt, even with an explicit backend= (mirrors
+        # extract_files_direct; _call_llm enforces it again underneath).
+        raise ValueError(
+            "LLM backends disabled by GRAPHIFY_NO_LLM=1. Unset it to label communities."
+        )
     labels = _placeholder_community_labels(communities)
     cap = len(communities) if max_communities is None else max_communities
     lines, labeled_cids = _community_label_lines(G, communities, gods, cap, top_k)

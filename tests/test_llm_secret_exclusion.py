@@ -99,3 +99,53 @@ def test_include_sensitive_env_overrides(tmp_path: Path, monkeypatch):
     secret.write_text("password: hunter2\n", encoding="utf-8")
     assert llm._llm_excluded_reason(secret) is None
     assert "hunter2" in llm._read_files([secret], tmp_path)
+
+
+# Prose notes whose stem is a multi-word topic slug are documents *about* the
+# subject; detect keeps them in the graph (#2106), so the prompt keeps them too.
+PROSE_TOPIC_NAMES = [
+    "managing-secrets-in-ci.md",
+    "credential-rotation-runbook.md",
+    "credentials_guide.md",
+    "secret_manager.md",
+]
+
+
+@pytest.mark.parametrize("name", PROSE_TOPIC_NAMES)
+def test_prose_topic_notes_are_not_excluded(name):
+    assert llm._llm_excluded_reason(Path(name)) is None
+
+
+def test_symlink_alias_is_judged_by_its_target(tmp_path: Path, capsys):
+    target = tmp_path / "config" / "prod.yaml"
+    target.parent.mkdir()
+    target.write_text("password: hunter2\n", encoding="utf-8")
+    alias = tmp_path / "docs" / "deployment.md"
+    alias.parent.mkdir()
+    try:
+        alias.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unsupported here")
+
+    assert "hunter2" not in llm._read_files([alias], tmp_path)
+    assert "not sending docs/deployment.md" in capsys.readouterr().err
+    assert target.resolve() not in llm._dispatched_source_text([alias], tmp_path)
+
+
+def test_image_refs_skip_credential_like_names(tmp_path: Path, capsys):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    secret = tmp_path / "aws_credentials_console_screenshot.png"
+    secret.write_bytes(png)
+    plain = tmp_path / "architecture_overview_diagram.png"
+    plain.write_bytes(png)
+
+    refs = llm._build_image_refs([secret, plain], tmp_path, read_bytes=False)
+    assert [r.rel for r in refs] == ["architecture_overview_diagram.png"]
+    assert "not sending aws_credentials_console_screenshot.png" in capsys.readouterr().err
+
+
+def test_excluded_warned_set_is_bounded(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(llm, "_LLM_EXCLUDED_WARNED_MAX", 3)
+    for i in range(10):
+        assert llm._skip_llm_excluded(tmp_path / f"{i}.yml", f"{i}.yml")
+    assert len(llm._llm_excluded_warned) <= 3

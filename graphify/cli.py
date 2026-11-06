@@ -2128,6 +2128,10 @@ def dispatch_command(cmd: str) -> None:
                     setattr(opts, key, payload[key])
             if payload.get("type"):
                 opts.query_type = str(payload["type"])
+            for key in ("question", "answer", "correction"):
+                value = getattr(opts, key)
+                if value is not None and not isinstance(value, str):
+                    p.error(f"--from-json: '{key}' must be a string")
             if not isinstance(opts.nodes, list):
                 p.error("--from-json: 'nodes' must be a list of node labels")
             opts.nodes = [str(n) for n in opts.nodes]

@@ -123,3 +123,18 @@ def test_generate_community_labels_skips_llm_when_no_llm(monkeypatch):
     assert source == "placeholder"
     assert labels == {0: "Community 0", 1: "Community 1"}
     assert calls["n"] == 0
+
+
+
+def test_call_llm_refuses_even_explicit_backend_when_no_llm(monkeypatch):
+    # dedup's tiebreaker and community labeling both funnel through _call_llm.
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    monkeypatch.setenv("GEMINI_API_KEY", "ambient")
+    with pytest.raises(ValueError, match="GRAPHIFY_NO_LLM=1"):
+        llm._call_llm("yes or no?", backend="gemini")
+
+
+def test_label_communities_refuses_even_explicit_backend_when_no_llm(monkeypatch):
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    with pytest.raises(ValueError, match="GRAPHIFY_NO_LLM=1"):
+        llm.label_communities(None, {0: ["a"]}, backend="gemini")
